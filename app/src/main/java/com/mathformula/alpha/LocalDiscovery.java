@@ -42,6 +42,8 @@ final class LocalDiscovery {
     catch(Exception e){return new JSONArray();}
   }
   long lastScan(){return prefs.getLong("lastScan",0);}
+  long lastAttempt(){return prefs.getLong("lastAttempt",0);}
+  String lastAttemptState(){return prefs.getString("lastAttemptState","Never scanned");}
   String error(){return prefs.getString("lastError","");}
   boolean scanning(){return RUNNING.get();}
   private String istDate(long timestamp) {
@@ -117,6 +119,10 @@ final class LocalDiscovery {
         updated=limited;
       }
       prefs.edit()
+        .putLong("lastAttempt",System.currentTimeMillis())
+        .putString("lastAttemptState","Completed · "+result.optInt("universeCount",0)+
+            " NSE symbols · "+result.optInt("quotedCount",0)+" prices · "+
+            result.optInt("eligibleForResearch",0)+" qualified research candidates")
         .putString("history",timeline.toString())
         .putString("latest",result.toString())
         .putString("sessionSnapshots",updated.toString())
@@ -166,7 +172,9 @@ final class LocalDiscovery {
     }catch(Exception ignored){}
   }
   void failure(String why){
-    prefs.edit().putString("lastError",safe(why)).apply();
+    prefs.edit()
+      .putString("lastAttemptState","Failed · "+safe(why))
+      .putString("lastError",safe(why)).apply();
   }
   String exportJson(){
     try{
@@ -266,6 +274,8 @@ final class LocalDiscovery {
   JSONObject scan(GrowwReadOnlyClient groww,Progress progress) throws Exception{
     long scanStarted=System.currentTimeMillis();
     if(!RUNNING.compareAndSet(false,true))throw new IllegalStateException("Discovery scan already active");
+    prefs.edit().putLong("lastAttempt",scanStarted)
+      .putString("lastAttemptState","Scanning NSE equity universe…").apply();
     try{
       List<String> universe=universe(progress);
       Map<String,Double> prices=new HashMap<>();
