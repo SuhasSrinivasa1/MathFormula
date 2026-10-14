@@ -44,6 +44,10 @@ public final class HomeActivity extends Activity {
   private final ExecutorService worker=Executors.newSingleThreadExecutor();
   private LocalDiscovery discovery;
   private RecommendationLedger ledger;
+  private JSONArray remoteLive=new JSONArray(),remoteClosed=new JSONArray();
+  private boolean remoteBusy=false,remoteConnected=false;
+  private long remoteLastAttempt=0,remoteLastSuccess=0;
+  private String remoteError="";
   private SecureGrowwStore secrets;
   private GrowwReadOnlyClient groww;
   private LinearLayout root;
@@ -57,7 +61,8 @@ public final class HomeActivity extends Activity {
       boolean open=MarketSchedule.weekdayTradingTime(System.currentTimeMillis());
       // Keep the user's selected section. Closing bell does not close a valid research watch.
       startedWhileOpen=open;
-      if(open && "LIVE".equals(section)){
+      if(serverConfigured())fetchRemote();
+      else if(open && "LIVE".equals(section)){
         ensureFresh();
         refreshPrices();
         evaluateAlerts();
@@ -137,6 +142,42 @@ public final class HomeActivity extends Activity {
   }
   @Override protected void onPause(){handler.removeCallbacks(autoUpdate);super.onPause();}
   @Override protected void onDestroy(){worker.shutdownNow();super.onDestroy();}
+  private String serverUrl(){
+    return getPreferences(MODE_PRIVATE).getString("server_url","");
+  }
+  private boolean serverConfigured(){return !serverUrl().isEmpty();}
+  private void fetchRemote(){
+    if(remoteBusy||!serverConfigured())return;
+    long now=System.currentTimeMillis();
+    if(now-remoteLastAttempt<25000L)return;
+    remoteLastAttempt=now;remoteBusy=true;
+    String base=serverUrl(),token=secrets.get("server_viewer_token");
+    worker.execute(()->{
+      JSONArray active=null,closed=null;String failure="";
+      try{
+        BackendReadOnlyClient api=new BackendReadOnlyClient(base,token);
+        JSONObject l=api.get("/v1/recommendations/live");
+        JSONObject c=api.get("/v1/recommendations/closed");
+        if(!"authoritative-v2.1".equals(l.optString("recommendationSchema"))||
+           !"authoritative-v2.1".equals(c.optString("recommendationSchema")))
+          throw new SecurityException("Scanner version mismatch");
+        active=l.optJSONArray("items");closed=c.optJSONArray("items");
+        if(active==null||closed==null)throw new IllegalStateException("Incomplete scanner results");
+      }catch(Exception ex){
+        failure=ex instanceof SecurityException?"Scanner authentication/version mismatch":
+          "Scanner offline · check HTTPS address and token in Settings";
+      }
+      JSONArray liveRows=active,closedRows=closed;String issue=failure;
+      handler.post(()->{
+        remoteBusy=false;
+        if(issue.isEmpty()){
+          remoteLive=liveRows;remoteClosed=closedRows;
+          remoteConnected=true;remoteLastSuccess=System.currentTimeMillis();remoteError="";
+        }else{remoteConnected=false;remoteError=issue;}
+        render();
+      });
+    });
+  }
   private void ensureFresh(){
     if(busy||quoteBusy||!open()||!secrets.configured())return;
     long now=System.currentTimeMillis();
