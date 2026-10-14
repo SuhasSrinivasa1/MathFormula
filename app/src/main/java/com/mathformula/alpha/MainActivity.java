@@ -205,11 +205,11 @@ public final class MainActivity extends Activity {
       if(!secret.isEmpty())TotpUtil.base32(secret);
       if(token.isEmpty()&&vault.get("totp_token").isEmpty()){
         growwConnectionMessage="Enter your Groww TOTP token";
-        render();return false;
+        Toast.makeText(this,growwConnectionMessage,Toast.LENGTH_LONG).show();return false;
       }
       if(secret.isEmpty()&&vault.get("totp_secret").isEmpty()){
         growwConnectionMessage="Enter your Groww TOTP secret";
-        render();return false;
+        Toast.makeText(this,growwConnectionMessage,Toast.LENGTH_LONG).show();return false;
       }
       if(!token.isEmpty())vault.put("totp_token",token);
       if(!secret.isEmpty())vault.put("totp_secret",secret);
@@ -222,7 +222,7 @@ public final class MainActivity extends Activity {
       return true;
     }catch(Exception ex){
       growwConnectionMessage="Unable to validate or securely store Groww credentials";
-      render();return false;
+      Toast.makeText(this,growwConnectionMessage,Toast.LENGTH_LONG).show();return false;
     }
   }
   private void saveGroww(){
