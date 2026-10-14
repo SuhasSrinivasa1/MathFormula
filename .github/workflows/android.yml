@@ -1,14 +1,17 @@
-name: Build MathFormula APK
+name: Build MathFormula v2 Android APK
 on:
   push:
     branches: [main, 'feat/**']
   pull_request:
   workflow_dispatch:
+concurrency:
+  group: mathformula-android-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   android:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Set up JDK 17
@@ -16,7 +19,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Install API 35 using preinstalled Android SDK
+      - name: Install Android API 35
         run: |
           export ANDROID_HOME=/usr/local/lib/android/sdk
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)
@@ -24,15 +27,30 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
           yes | "$SDKMANAGER" --licenses || true
           "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
-      - name: Gradle
+      - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Assemble debug APK
+      - name: Assemble APK (pre-release debug signing)
         run: gradle --no-daemon :app:assembleDebug
-      - name: Upload installable APK
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk MathFormula-v2.0.0-Preview.apk
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MathFormula-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: MathFormula-v2.0.0-Preview
+          path: MathFormula-v2.0.0-Preview.apk
           if-no-files-found: error
+      - name: Publish download link as GitHub pre-release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/feat/alpha30-android'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v2.0.0-rc1 >/dev/null 2>&1; then
+            gh release edit v2.0.0-rc1 --prerelease --target "$GITHUB_SHA"
+          else
+            gh release create v2.0.0-rc1 --target "$GITHUB_SHA" --prerelease \
+              --title "MathFormula v2.0 preview" \
+              --notes "New Live / Closed recommendation UI and Settings. Research only: Alpha-30 BUY eligibility remains blocked until all factors and execution gates are verified. This pre-release uses Android debug signing; not a production-signed binary."
+          fi
+          gh release upload v2.0.0-rc1 MathFormula-v2.0.0-Preview.apk --clobber
