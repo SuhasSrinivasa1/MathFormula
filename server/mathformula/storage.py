@@ -43,7 +43,9 @@ CREATE TABLE IF NOT EXISTS execution_evidence(
  vwap5m INTEGER NOT NULL,vwap15m INTEGER NOT NULL,
  rvol REAL,sector_positive INTEGER NOT NULL,liquidity_verified INTEGER NOT NULL,
  spread_bps REAL,net_rr REAL,entry REAL,stop_loss REAL,target REAL,
- trading_allowed INTEGER NOT NULL,material_risk_clear INTEGER NOT NULL);
+ trading_allowed INTEGER NOT NULL,material_risk_clear INTEGER NOT NULL,
+ no_overextension INTEGER NOT NULL DEFAULT 0,market_regime_clear INTEGER NOT NULL DEFAULT 0,
+ fee_schedule_verified INTEGER NOT NULL DEFAULT 0,provenance_verified INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS outcomes(day TEXT NOT NULL,window TEXT NOT NULL,symbol TEXT NOT NULL,
 horizon INTEGER NOT NULL,peak_return_pct REAL NOT NULL,close_return_pct REAL NOT NULL,
 captured INTEGER NOT NULL,computed_ms INTEGER NOT NULL,PRIMARY KEY(day,window,symbol,horizon));
@@ -58,6 +60,11 @@ def db(path):
     conn=sqlite3.connect(path,timeout=30,factory=_ClosingConnection)
     conn.row_factory=sqlite3.Row
     conn.executescript(SCHEMA)
+    # Preserve older v2.x databases while forcing missing new gates to FAIL.
+    existing={x[1] for x in conn.execute("PRAGMA table_info(execution_evidence)")}
+    for gate in ("no_overextension","market_regime_clear","fee_schedule_verified","provenance_verified"):
+        if gate not in existing:
+            conn.execute("ALTER TABLE execution_evidence ADD COLUMN "+gate+" INTEGER NOT NULL DEFAULT 0")
     return conn
 def audit(conn,kind,symbol,message,details=None):
     conn.execute("INSERT INTO audit(at_ms,type,symbol,message,details) VALUES (?,?,?,?,?)",
@@ -175,7 +182,8 @@ def import_execution_evidence(conn,path):
     """
     count=0; now=ms()
     keys=("breakout15m","confirmation5m","vwap5m","vwap15m","sector_positive",
-          "liquidity_verified","trading_allowed","material_risk_clear")
+          "liquidity_verified","trading_allowed","material_risk_clear",
+          "no_overextension","market_regime_clear","fee_schedule_verified","provenance_verified")
     with open(path,newline='',encoding='utf-8-sig') as f:
         for raw in csv.DictReader(f):
             row=_upper(raw)
@@ -206,8 +214,9 @@ def import_execution_evidence(conn,path):
             conn.execute("""INSERT INTO execution_evidence
               (symbol,observed_ms,source,breakout15m,confirmation5m,
                vwap5m,vwap15m,rvol,sector_positive,liquidity_verified,
-               spread_bps,net_rr,entry,stop_loss,target,trading_allowed,material_risk_clear)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               spread_bps,net_rr,entry,stop_loss,target,trading_allowed,material_risk_clear,
+               no_overextension,market_regime_clear,fee_schedule_verified,provenance_verified)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                ON CONFLICT(symbol) DO UPDATE SET
                  observed_ms=excluded.observed_ms,source=excluded.source,
                  breakout15m=excluded.breakout15m,confirmation5m=excluded.confirmation5m,
@@ -216,7 +225,11 @@ def import_execution_evidence(conn,path):
                  spread_bps=excluded.spread_bps,net_rr=excluded.net_rr,entry=excluded.entry,
                  stop_loss=excluded.stop_loss,target=excluded.target,
                  trading_allowed=excluded.trading_allowed,
-                 material_risk_clear=excluded.material_risk_clear""",data)
+                 material_risk_clear=excluded.material_risk_clear,
+                 no_overextension=excluded.no_overextension,
+                 market_regime_clear=excluded.market_regime_clear,
+                 fee_schedule_verified=excluded.fee_schedule_verified,
+                 provenance_verified=excluded.provenance_verified""",data)
             count+=1
     audit(conn,"EXECUTION_FEED","","Verified-gate import",{"count":count,"sourceFile":Path(path).name})
     conn.commit()
