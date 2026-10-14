@@ -36,13 +36,14 @@ import org.json.JSONArray;
  * market-session snapshots). No buttons to refresh, start monitoring, or trade.
  */
 public final class HomeActivity extends Activity {
-  private static final int INK=Color.rgb(26,40,57),BLUE=Color.rgb(32,98,168),
+  private static final int INK=Color.rgb(20,38,56),BLUE=Color.rgb(24,91,154),
       MUTED=Color.rgb(103,113,127),GREEN=Color.rgb(19,123,85),
       AMBER=Color.rgb(158,98,19),RED=Color.rgb(180,59,58);
   private static final int EXPORT=867;
   private final Handler handler=new Handler(Looper.getMainLooper());
   private final ExecutorService worker=Executors.newSingleThreadExecutor();
   private LocalDiscovery discovery;
+  private RecommendationLedger ledger;
   private SecureGrowwStore secrets;
   private GrowwReadOnlyClient groww;
   private LinearLayout root;
@@ -54,8 +55,7 @@ public final class HomeActivity extends Activity {
   private final Runnable autoUpdate=new Runnable(){
     @Override public void run(){
       boolean open=MarketSchedule.weekdayTradingTime(System.currentTimeMillis());
-      if(startedWhileOpen && !open && "LIVE".equals(section)) section="CLOSED";
-      if(!startedWhileOpen && open && "CLOSED".equals(section)) section="LIVE";
+      // Keep the user's selected section. Closing bell does not close a valid research watch.
       startedWhileOpen=open;
       if(open && "LIVE".equals(section)){
         ensureFresh();
@@ -104,6 +104,7 @@ public final class HomeActivity extends Activity {
     super.onCreate(saved);
     secrets=new SecureGrowwStore(this);groww=new GrowwReadOnlyClient(secrets);
     discovery=new LocalDiscovery(this);
+    ledger=new RecommendationLedger(this);
     ResearchAlerts.channel(this);
     ResearchJob.schedule(this);
     if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){
@@ -111,7 +112,7 @@ public final class HomeActivity extends Activity {
     }
     startedWhileOpen=open();
     lastVisibleDate=todayIst();
-    section=startedWhileOpen?"LIVE":"CLOSED";
+    section="LIVE"; // Recommendation lifecycle is independent of market open/close.
     getWindow().setStatusBarColor(Color.rgb(247,249,252));
     getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
     ScrollView scroll=new ScrollView(this);
@@ -127,7 +128,7 @@ public final class HomeActivity extends Activity {
   @Override protected void onResume(){
     super.onResume();
     if(!todayIst().equals(lastVisibleDate)){
-      section=open()?"LIVE":"CLOSED";
+      // Do not silently switch tabs when a new trading day begins.
       lastVisibleDate=todayIst();
       startedWhileOpen=open();
     }
@@ -199,34 +200,33 @@ public final class HomeActivity extends Activity {
     });
   }
   private void tabHeader(){
-    LinearLayout top=new LinearLayout(this);
-    top.setGravity(Gravity.CENTER_VERTICAL);
-    TextView label=text("MathFormula",26,INK,true);
-    top.addView(label,new LinearLayout.LayoutParams(0,-2,1));
-    TextView settings=text("⚙",24,MUTED,false);
-    settings.setContentDescription("Connections and advanced settings");
-    settings.setPadding(dp(11),dp(5),dp(8),dp(5));
+    LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);
+    LinearLayout brand=new LinearLayout(this);brand.setOrientation(LinearLayout.VERTICAL);
+    brand.addView(text("MathFormula",27,INK,true));
+    brand.addView(text("RESEARCH DESK  /  ALPHA-30 v1.0",10,BLUE,true));
+    top.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
+    TextView settings=text("⚙",24,BLUE,true);
+    settings.setContentDescription("Open streamlined settings");
+    settings.setGravity(Gravity.CENTER);
+    settings.setPadding(dp(14),dp(10),dp(14),dp(10));
+    settings.setBackground(rounded(Color.WHITE));
     settings.setOnClickListener(v->startActivity(new Intent(this,MainActivity.class)));
-    top.addView(settings);
-    root.addView(top);
-    root.addView(text("ALPHA-30 v1.0 · FIXED RESEARCH MODEL",11,BLUE,true));
-    space(18);
-    LinearLayout tabs=new LinearLayout(this);
-    tabs.setOrientation(LinearLayout.HORIZONTAL);
+    top.addView(settings);root.addView(top);
+    space(20);
+    LinearLayout tabs=new LinearLayout(this);tabs.setBackground(rounded(Color.WHITE));
+    tabs.setPadding(dp(4),dp(4),dp(4),dp(4));
     for(String item:new String[]{"LIVE","CLOSED"}){
-      TextView view=text(item.equals("LIVE")?"Live":"Closed",15,
-        item.equals(section)?BLUE:MUTED,item.equals(section));
-      view.setGravity(Gravity.CENTER);
-      view.setPadding(dp(14),dp(13),dp(14),dp(13));
-      view.setBackground(rounded(item.equals(section)?Color.rgb(230,239,248):Color.WHITE));
+      String caption=item.equals("LIVE")?"Live recommendations":"Closed recommendations";
+      TextView tab=text(caption,13,item.equals(section)?BLUE:MUTED,item.equals(section));
+      tab.setGravity(Gravity.CENTER);tab.setPadding(dp(6),dp(13),dp(6),dp(13));
+      tab.setBackground(rounded(item.equals(section)?Color.rgb(229,240,250):Color.WHITE));
       LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
-      lp.rightMargin=dp(7);tabs.addView(view,lp);
-      view.setOnClickListener(v->{
-        section=item;render();
+      tabs.addView(tab,lp);
+      tab.setOnClickListener(v->{section=item;render();
         if(item.equals("LIVE")){ensureFresh();refreshPrices();}
       });
     }
-    root.addView(tabs);space(14);
+    root.addView(tabs);space(16);
   }
   private void summaryCard(JSONObject scan,boolean closed){
     LinearLayout c=card();
@@ -234,46 +234,31 @@ public final class HomeActivity extends Activity {
     long elapsed=System.currentTimeMillis()-completed;
     long threshold=MarketSchedule.preClose(System.currentTimeMillis())?8*60000L:20*60000L;
     boolean recent=completed>0&&elapsed>=0&&elapsed<=threshold;
-    String state=closed?"SESSION RECORD · NOT A LIVE QUOTE":
-      !open()?"MARKET CLOSED":
-      busy?"SCANNING NSE":!secrets.configured()?"GROWW NOT CONNECTED":
-      recent?"LATEST RESEARCH SCAN AVAILABLE":"SCAN OVERDUE / NO CURRENT RESULTS";
-    int color=closed?MUTED:recent?GREEN:AMBER;
-    c.addView(text(state,12,color,true));spaceIn(c,6);
-    c.addView(text(closed?
-      "Latest session snapshot: "+time(completed):
-      busy?(scanProgress.isEmpty()?"Finding opportunities…":scanProgress):
-        "Last completed universe scan: "+time(completed),12,MUTED,false));
+    String state=closed?"HISTORICAL OBSERVATIONS":
+      !open()?"MARKET CLOSED · REVALIDATE NEXT SESSION":
+      busy?"NSE SCAN IN PROGRESS":!secrets.configured()?"CONNECT GROWW IN SETTINGS":
+      recent?"LATEST RESEARCH SCAN":"LIVE DATA NOT VERIFIED";
+    c.addView(text(state,12,closed?MUTED:recent?GREEN:AMBER,true));
+    spaceIn(c,8);
+    c.addView(text("Last complete scan · "+time(completed),12,MUTED,false));
     if(completed>0){
-      spaceIn(c,5);
-      c.addView(text("NSE stocks: "+scan.optInt("universeCount")+" · Quotes received: "+
-        scan.optInt("quotedCount")+" · Histories checked: "+
-        scan.optInt("dailyHistoryVerified")+" · Eligible: "+
-        scan.optInt("eligibleForResearch"),12,INK,false));
+      spaceIn(c,7);
+      c.addView(text(scan.optInt("universeCount")+" NSE instruments · "+
+        scan.optInt("quotedCount")+" prices · "+
+        scan.optInt("dailyHistoryVerified")+" histories checked",12,INK,false));
     }
     if(!closed){
-    spaceIn(c,7);
-    boolean alertsOn=ResearchAlerts.permission(this);
-    c.addView(text(alertsOn?
-      "Research alerts enabled · Android background checks are best-effort (~15 min)":
-      "Notifications disabled · enable permission in Android app settings",
-      12,alertsOn?GREEN:AMBER,false));
-    long alertChecked=ResearchAlerts.lastCheck(this);
-    c.addView(text("Last alert check: "+time(alertChecked)+
-      " · "+ResearchAlerts.lastState(this),11,MUTED,false));
-    spaceIn(c,6);
-    c.addView(text("Groww usage: "+GrowwQuota.status()+". "+
-      "Shared app cap 6/sec and 210/min (Groww publishes 10/sec and 300/min). "+
-      "Other apps on your Groww account are not included.",11,MUTED,false));
+      spaceIn(c,9);
+      c.addView(text(busy?scanProgress:
+        "Research watches only · no verified BUY signals. Background phone alerts are best-effort.",
+        11,AMBER,false));
+      c.addView(text("Notification access: "+(ResearchAlerts.permission(this)?"enabled":"off")+
+        "  ·  Groww "+(secrets.configured()?"configured":"not configured"),11,MUTED,false));
     }
-    if(!closed&&!discovery.error().isEmpty()){
-      spaceIn(c,6);
-      c.addView(text("Data issue: "+safeReason(new IllegalStateException(discovery.error())),
-        12,AMBER,false));
-    }
-    if(closed){
+    if(!discovery.error().isEmpty()){
       spaceIn(c,7);
-      c.addView(text("These are the last prices actually recorded by MathFormula during the session, not verified NSE closing-auction prices.",11,AMBER,false));
+      c.addView(text("Data issue · "+safeReason(new IllegalStateException(discovery.error())),
+        11,AMBER,false));
     }
   }
   private void spaceIn(LinearLayout c,int amount){
@@ -281,99 +266,128 @@ public final class HomeActivity extends Activity {
   }
   private void stockCard(JSONObject j,int rank,boolean closed){
     LinearLayout c=card();
-    LinearLayout title=new LinearLayout(this);title.setGravity(Gravity.CENTER_VERTICAL);
-    title.setOrientation(LinearLayout.HORIZONTAL);
+    LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);
     String symbol=j.optString("symbol","UNKNOWN");
-    title.addView(text(rank+". "+symbol,18,INK,true),new LinearLayout.LayoutParams(0,-2,1));
-    title.addView(text(closed?"LAST OBSERVED":j.optString("stage","WATCHING"),
-      11,closed?MUTED:BLUE,true));c.addView(title);spaceIn(c,9);
-    double last=j.optDouble("price",Double.NaN),move=j.optDouble("dayChangePct",Double.NaN);
-    c.addView(text(money(last)+"   "+percent(move),20,INK,true));
-    spaceIn(c,10);
-    c.addView(text("Expected breakout  "+money(j.optDouble("breakoutLevel",Double.NaN)),
-      14,BLUE,true));
-    c.addView(text("Distance to resistance  "+percent(j.optDouble("distancePct",Double.NaN)),
-      12,MUTED,false));
-    spaceIn(c,10);
-    long trade=j.optLong("tradeMs",0),now=System.currentTimeMillis();
-    boolean live=!closed&&open()&&trade>0&&now>=trade&&now-trade<=60_000L;
-    c.addView(text(closed?"Recorded trade: "+time(trade):
-      "Latest trade: "+hour(trade)+(live?" · RECENT":" · STALE / UNVERIFIED"),
-      12,live?GREEN:AMBER,false));
-    if(!closed)c.addView(text(
-      "Technical watch only · waiting for completed candles, VWAP and full model",
-      12,MUTED,false));
-    else c.addView(text("Screening stage at the time: "+j.optString("stage","UNKNOWN"),
-      12,MUTED,false));
+    header.addView(text(symbol,19,INK,true),new LinearLayout.LayoutParams(0,-2,1));
+    String stage=closed?RecommendationLedger.friendly(j.optString("closeCode")):
+      j.optString("status",j.optString("stage","WATCHING"));
+    int stageColor=closed?MUTED:stage.contains("BREAKOUT")?AMBER:BLUE;
+    header.addView(text(stage.toUpperCase(Locale.US),10,stageColor,true));
+    c.addView(header);spaceIn(c,5);
+    c.addView(text(closed?"ARCHIVED RESEARCH · NOT AN EXECUTED TRADE":
+      "NSE CASH · TECHNICAL RESEARCH WATCH",10,MUTED,true));
+    spaceIn(c,12);
+    double price=j.optDouble("price",Double.NaN);
+    double pct=j.optDouble("dayChangePct",Double.NaN);
+    c.addView(text(money(price)+"    "+percent(pct),19,INK,true));
     spaceIn(c,8);
-    c.addView(text("NO SIGNAL · Frozen Alpha-30 verification incomplete",11,AMBER,true));
+    c.addView(text("Breakout reference  "+money(j.optDouble("breakoutLevel",Double.NaN)),13,BLUE,true));
+    c.addView(text("Distance vs resistance  "+percent(j.optDouble("distancePct",Double.NaN)),12,MUTED,false));
+    spaceIn(c,11);
+    long trade=j.optLong("tradeMs",0),now=System.currentTimeMillis();
+    boolean quoteFresh=!closed&&open()&&trade>0&&now>=trade&&now-trade<=60000L;
+    c.addView(text((closed?"Last recorded quote · ":"Exchange observation · ")+time(trade),
+      11,quoteFresh?GREEN:MUTED,false));
+    spaceIn(c,7);
+    String reason=closed?j.optString("closeReason","Closed as a historical research watch"):
+      j.optString("reason","Pending full Alpha-30 and executable risk validation");
+    c.addView(text(reason,12,INK,false));
+    spaceIn(c,9);
+    c.addView(text("NO SIGNAL  ·  Missing mandatory Alpha-30 inputs / entry validation",
+      11,AMBER,true));
+    c.setContentDescription(symbol+" research details");
+    c.setOnClickListener(v->{
+      String message="Status: "+stage+"\n\nObserved price: "+money(price)+
+        "\nPrior resistance: "+money(j.optDouble("breakoutLevel",Double.NaN))+
+        "\nObserved trade: "+time(trade)+
+        "\nFirst selected: "+time(j.optLong("openedAtMs",j.optLong("scannedAtMs",0)))+
+        (closed?"\nClosed: "+time(j.optLong("closedAtMs",0)):"")+
+        "\n\nReason: "+reason+
+        "\n\nAlpha-30: NO SIGNAL. Neither a BUY recommendation nor an executed trade.";
+      new android.app.AlertDialog.Builder(this).setTitle(symbol+" · recommendation record")
+        .setMessage(message).setPositiveButton("Done",null).show();
+    });
   }
   private void renderLive(){
     JSONObject scan=discovery.latest();
-    summaryCard(scan,false);
-    root.addView(text("Top Opportunities",20,INK,true));space(6);
-    root.addView(text("Three most recent qualifying research setups · automatic refresh",12,MUTED,false));
+    JSONArray live=ledger.live();
+    root.addView(text("Live recommendations",22,INK,true));
+    space(4);
+    root.addView(text("Forward-looking watches, carried forward while the setup remains valid.",12,MUTED,false));
     space(13);
-    long at=scan.optLong("scannedAtMs",0),now=System.currentTimeMillis();
-    long maximum=MarketSchedule.preClose(now)?8*60000L:20*60000L;
-    boolean scanFresh=open()&&at>0&&now-at>=0&&now-at<=maximum;
-    JSONArray top=scan.optJSONArray("top");
-    if(!scanFresh||top==null||top.length()==0){
-      LinearLayout c=card();
-      String heading=busy?"Finding opportunities…":!open()?"Market closed":
-        "No verified fresh opportunities";
-      c.addView(text(heading,16,INK,true));spaceIn(c,7);
-      c.addView(text(busy?"Research results appear after a completed NSE scan.":
-        !open()?"View Closed for the last captured session.":
-        !secrets.configured()?"Connect Groww in Settings.":
-        "No fresh complete scan or no stocks passed the preliminary research filters. Previous picks are not recycled.",
-        13,MUTED,false));
-      return;
+    LinearLayout overview=card();
+    overview.addView(text(live.length()+"  active research watches",20,INK,true));
+    spaceIn(overview,5);
+    overview.addView(text("BUY eligible: 0 verified · Never infer a BUY from price alone",
+      12,AMBER,false));
+    summaryCard(scan,false);
+    if(live.length()==0){
+      LinearLayout empty=card();
+      empty.addView(text(busy?"Scanning NSE…":"No active verified research shortlist",16,INK,true));
+      spaceIn(empty,7);
+      empty.addView(text(!secrets.configured()?"Connect Groww using Settings to enable discovery.":
+        "A completed eligible scan is required. The app never recycles old recommendations as new.",12,MUTED,false));
     }
-    for(int i=0;i<Math.min(3,top.length());i++){
-      JSONObject j=top.optJSONObject(i);if(j!=null)stockCard(j,i+1,false);
+    for(int i=0;i<live.length();i++){
+      JSONObject item=live.optJSONObject(i);
+      if(item!=null)stockCard(item,i+1,false);
     }
-    root.addView(text("Breakout is a prior 20-session resistance level, not a price prediction. A discovery shortlist is NOT a complete BUY recommendation.",11,MUTED,false));
+    space(8);
+    root.addView(text("WATCHING → BREAKOUT OBSERVED → ALPHA-30 VERIFICATION → closure or verified entry. " +
+      "This build cannot issue BUY: fundamentals, catalysts and risk/reward remain unavailable.",
+      11,MUTED,false));
   }
   private void renderClosed(){
-    JSONObject closed=discovery.lastClosedSession(System.currentTimeMillis());
-    if(closed.length()==0){
-      LinearLayout c=card();c.addView(text("No completed-session record yet",17,INK,true));
-      spaceIn(c,6);
-      c.addView(text("The Closed section fills after MathFormula successfully captures an NSE scan during a trading session. It does not invent yesterday's closing prices.",13,MUTED,false));
-    }else{
-      String date=closed.optString("sessionDate","");
-      root.addView(text("Session · "+date,20,INK,true));space(10);
-      summaryCard(closed,true);
-      JSONArray picks=closed.optJSONArray("top");
-      root.addView(text("Last Tracked Opportunities",17,INK,true));space(10);
-      if(picks==null||picks.length()==0){
-        LinearLayout c=card();c.addView(text("No candidates qualified in this captured session",13,MUTED,false));
-      }else for(int i=0;i<Math.min(3,picks.length());i++){
-        JSONObject j=picks.optJSONObject(i);if(j!=null)stockCard(j,i+1,true);
-      }
+    JSONArray records=ledger.closed();
+    root.addView(text("Closed recommendations",22,INK,true));space(5);
+    root.addView(text("Immutable research outcomes with reasons and observation times.",12,MUTED,false));
+    space(13);
+    LinearLayout overview=card();
+    overview.addView(text(records.length()+"  recorded closures",20,INK,true));
+    spaceIn(overview,5);
+    overview.addView(text("Entry missed · Expired · No longer shortlisted. No implied trade P&L.",
+      12,MUTED,false));
+    int start=Math.max(0,records.length()-40);
+    for(int i=records.length()-1;i>=start;i--){
+      JSONObject row=records.optJSONObject(i);
+      if(row!=null)stockCard(row,i+1,true);
     }
-    space(5);
-    JSONArray history=discovery.history();
-    root.addView(text("Previously Tracked",17,INK,true));space(7);
-    if(history.length()==0)root.addView(text("Stocks replaced by later scans will appear here.",12,MUTED,false));
-    for(int i=history.length()-1;i>=Math.max(0,history.length()-5);i--){
-      JSONObject j=history.optJSONObject(i);if(j==null)continue;
-      LinearLayout c=card();c.addView(text(j.optString("symbol","")+"  ·  ARCHIVED",14,INK,true));
-      spaceIn(c,4);c.addView(text("Recorded "+money(j.optDouble("price",Double.NaN))+
-        " · Breakout "+money(j.optDouble("breakoutLevel",Double.NaN)),12,MUTED,false));
-      c.addView(text("Removed "+time(j.optLong("removedAtMs",0)),11,MUTED,false));
+    if(records.length()==0){
+      LinearLayout empty=card();
+      empty.addView(text("No v2.0 closures recorded yet",16,INK,true));
+      spaceIn(empty,6);
+      empty.addView(text("Closed records are created when a completed NSE scan or a fresh quote invalidates a watch, not merely because the exchange closes.",12,MUTED,false));
+    }
+    space(4);
+    JSONObject previous=discovery.lastClosedSession(System.currentTimeMillis());
+    root.addView(text("Previous session archive",17,INK,true));space(8);
+    if(previous.length()>0){
+      LinearLayout snapshot=card();
+      snapshot.addView(text("Last captured session · "+previous.optString("sessionDate",""),14,INK,true));
+      spaceIn(snapshot,5);
+      snapshot.addView(text("Observation: "+time(previous.optLong("scannedAtMs",0))+
+        " · Historical scan only, not the official exchange closing price",11,MUTED,false));
+      JSONArray top=previous.optJSONArray("top");
+      if(top!=null)for(int i=0;i<top.length();i++){
+        JSONObject pick=top.optJSONObject(i);
+        if(pick!=null){
+          spaceIn(snapshot,5);
+          snapshot.addView(text(pick.optString("symbol")+" · "+money(pick.optDouble("price",Double.NaN))+
+            " · research watch at capture",12,INK,false));
+        }
+      }
+    }else{
+      LinearLayout c=card();
+      c.addView(text("No prior session scan captured on this device.",12,MUTED,false));
     }
     space(12);
-    TextView export=text("Export diagnostic logs  ↗",13,BLUE,true);
-    export.setGravity(Gravity.CENTER);
-    export.setPadding(dp(12),dp(15),dp(12),dp(15));
+    TextView export=text("Export research audit ZIP  ↗",13,BLUE,true);
+    export.setGravity(Gravity.CENTER);export.setPadding(dp(14),dp(16),dp(14),dp(16));
     export.setBackground(rounded(Color.WHITE));
-    export.setContentDescription("Save MathFormula diagnostic ZIP to Android Files");
     export.setOnClickListener(v->exportLogs());
     root.addView(export);
-    space(10);
-    root.addView(text("Stored snapshots can have gaps when the phone was offline. Download logs for a point-in-time audit.",11,MUTED,false));
+    space(7);
+    root.addView(text("Archived observations can have gaps. These are not filled with estimated returns.",11,MUTED,false));
   }
   private void render(){
     if(root==null)return;
