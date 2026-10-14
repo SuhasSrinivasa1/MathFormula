@@ -299,20 +299,44 @@ final class LocalDiscovery {
          symbol=column(keys,"trading_symbol");
       if(ex<0||seg<0||series<0||symbol<0)throw new IOException("Groww instrument file schema changed");
       String line;
+      int nseCash=0,excludedNonEquity=0,excludedSeries=0,missingSymbol=0;
+      Map<String,Integer> acceptedSeries=new TreeMap<>();
       while((line=reader.readLine())!=null){
         List<String> row=csv(line);
         if(row.size()<=Math.max(Math.max(ex,seg),Math.max(series,symbol)))continue;
         if(!"NSE".equalsIgnoreCase(row.get(ex).trim())||
-           !"CASH".equalsIgnoreCase(row.get(seg).trim())||
-           !"EQ".equalsIgnoreCase(row.get(series).trim()))continue;
-        if(kind>=0&&kind<row.size()&&!"EQ".equalsIgnoreCase(row.get(kind).trim()))continue;
+           !"CASH".equalsIgnoreCase(row.get(seg).trim()))continue;
+        nseCash++;
+        String typ=kind>=0&&kind<row.size()?row.get(kind).trim().toUpperCase(Locale.US):"";
+        String ser=row.get(series).trim().toUpperCase(Locale.US);
+        // NSE equities may be traded in more than the EQ series. Exclude funds,
+        // indices, debt and derivatives; do not pretend these are stocks.
+        if(!typ.isEmpty()&&!"EQ".equals(typ)){excludedNonEquity++;continue;}
+        if(!Arrays.asList("EQ","BE","BZ","SM","ST","E1").contains(ser)){
+          excludedSeries++;continue;
+        }
         String s=row.get(symbol).trim().toUpperCase(Locale.US);
-        if(s.matches("[A-Z0-9&-]{1,26}")&&unique.add(s))stocks.add(s);
+        if(!s.matches("[A-Z0-9&-]{1,26}")){missingSymbol++;continue;}
+        if(unique.add(s)){
+          stocks.add(s);
+          acceptedSeries.put(ser,acceptedSeries.getOrDefault(ser,0)+1);
+        }
         if(stocks.size()>8500)throw new IOException("Unexpectedly large NSE universe");
       }
     }
     if(stocks.size()<500)throw new IOException("Groww returned fewer than 500 NSE EQ instruments");
     Collections.sort(stocks);
+    JSONObject seriesJson=new JSONObject();
+    for(Map.Entry<String,Integer> e:acceptedSeries.entrySet())
+      seriesJson.put(e.getKey(),e.getValue());
+    universeDiagnostics=new JSONObject()
+      .put("nseCashInstrumentRows",nseCash)
+      .put("eligibleUniqueEquities",stocks.size())
+      .put("excludedNonEquityRows",excludedNonEquity)
+      .put("excludedSeriesRows",excludedSeries)
+      .put("invalidSymbolRows",missingSymbol)
+      .put("eligibleSeries",seriesJson)
+      .put("note","Count comes from Groww NSE CASH equity instrument master; no artificial 4,000 target.");
     return stocks;
   }
   private int column(List<String> head,String name){
