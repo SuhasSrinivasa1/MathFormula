@@ -310,6 +310,30 @@ public final class HomeActivity extends Activity {
     }
     return previous==0?now:Math.max(now,previous+4*60*60000L);
   }
+  private String rejectionSummary(JSONObject reasons){
+    java.util.Iterator<String> keys=reasons.keys();
+    StringBuilder out=new StringBuilder();
+    while(keys.hasNext()){
+      String key=keys.next();
+      if(out.length()>0)out.append(" · ");
+      out.append(key.replace('_',' ')).append(": ").append(reasons.optInt(key,0));
+    }
+    return out.length()==0?"No rejections recorded":out.toString();
+  }
+  private void preliminaryCard(JSONObject candidate,int number){
+    if(candidate==null)return;
+    LinearLayout c=card();
+    c.addView(text("#"+number+" · "+candidate.optString("symbol","UNKNOWN"),17,INK,true));
+    spaceIn(c,5);
+    c.addView(text("PRELIMINARY · EOD HISTORY / ALPHA-30 NOT VERIFIED",11,AMBER,true));
+    spaceIn(c,5);
+    c.addView(text("Groww observed last traded: "+money(candidate.optDouble("price",Double.NaN)),15,INK,true));
+    c.addView(text("Technical move from open: "+percent(candidate.optDouble("fromOpenPct",Double.NaN))+
+      " · preliminary technical rank "+
+      String.format(Locale.US,"%.1f",candidate.optDouble("preliminaryRank",0)),12,MUTED,false));
+    spaceIn(c,6);
+    c.addView(text("This is a provisional name from whole-universe screening, NOT a verified closing price, recommendation or BUY.",11,AMBER,false));
+  }
   private void scanStatusCard(){
     LinearLayout c=card();
     boolean marketOpen=open();
@@ -338,6 +362,16 @@ public final class HomeActivity extends Activity {
           12,BLUE,true));
       }
       JSONObject latest=discovery.latest();
+      JSONObject running=discovery.inProgress();
+      if(running.optInt("total")>0){
+        spaceIn(c,6);
+        c.addView(text("Historical checks: "+running.optInt("checked")+
+          " / "+running.optInt("total")+" · verified candidates "+running.optInt("passed"),
+          12,BLUE,true));
+        JSONObject rejected=running.optJSONObject("rejections");
+        if(rejected!=null&&rejected.length()>0)
+          c.addView(text("Rejection breakdown: "+rejectionSummary(rejected),11,MUTED,false));
+      }
       if(discovery.lastScan()>0){
         spaceIn(c,5);
         c.addView(text("Stocks in master: "+latest.optInt("universeCount",0)+
@@ -345,8 +379,25 @@ public final class HomeActivity extends Activity {
           " · History checked: "+latest.optInt("dailyHistoryVerified",0)+
           " · Research-qualified: "+latest.optInt("eligibleForResearch",0),
           11,MUTED,false));
-        c.addView(text("Research watches shown: "+ledger.live().length()+
-          " · only candidates meeting verified screening filters",11,MUTED,false));
+        JSONObject coverage=latest.optJSONObject("universeCoverage");
+        if(coverage!=null){
+          spaceIn(c,4);
+          c.addView(text("Groww universe: "+coverage.optInt("eligibleUniqueEquities")+" NSE equities"+
+            " · series "+coverage.optJSONObject("eligibleSeries"),11,MUTED,false));
+          c.addView(text("Excluded instrument rows: non-equities "+
+            coverage.optInt("excludedNonEquityRows")+" · other series "+
+            coverage.optInt("excludedSeriesRows"),11,MUTED,false));
+        }
+        c.addView(text("Full-universe quote batches: "+
+          latest.optInt("batchesSucceeded")+" successful · "+
+          latest.optInt("batchesFailed")+" failed",11,MUTED,false));
+        c.addView(text("History reviewed: "+
+          latest.optInt("dailyHistoryVerified")+" of "+
+          latest.optInt("broadCandidates")+" broad candidates",11,MUTED,false));
+        JSONObject reasons=latest.optJSONObject("verificationRejectReasons");
+        if(reasons!=null&&reasons.length()>0){
+          c.addView(text("Historical rejection audit: "+rejectionSummary(reasons),11,MUTED,false));
+        }
       }
       spaceIn(c,7);
       c.addView(text("Broad NSE scan: every 15 min (09:15–14:29), every 5 min (14:30–15:29).",11,MUTED,false));
@@ -539,7 +590,12 @@ public final class HomeActivity extends Activity {
   }
   private void renderLive(){
     JSONObject scan=discovery.latest();
-    JSONArray live=serverConfigured()?(remoteConnected?remoteLive:new JSONArray()):ledger.live();
+    JSONArray latestTop=scan.optJSONArray("top");
+    JSONArray live=serverConfigured()?(remoteConnected?remoteLive:new JSONArray()):
+      latestTop!=null?latestTop:ledger.live();
+    JSONObject preliminary=discovery.preview();
+    JSONArray provisional=serverConfigured()?new JSONArray():preliminary.optJSONArray("top");
+    if(provisional==null)provisional=new JSONArray();
     boolean nextSession="NEXT_SESSION_RESEARCH".equals(scan.optString("scanMode",""));
     root.addView(text(nextSession?"Tomorrow's Top 3 research":"Live recommendations",22,INK,true));
     space(4);
@@ -550,9 +606,8 @@ public final class HomeActivity extends Activity {
        12,MUTED,false));
     space(13);
     LinearLayout overview=card();
-    overview.addView(text((nextSession?
-      Math.min(3,scan.optJSONArray("top")==null?0:scan.optJSONArray("top").length())+" next-session candidates · "+
-      live.length()+" ongoing watches":live.length()+" active research watches"),20,INK,true));
+    overview.addView(text(live.length()+" historically verified watches · "+
+      provisional.length()+" provisional whole-universe leads",17,INK,true));
     spaceIn(overview,5);
     int verified=0;
     if(serverConfigured()&&remoteConnected&&open())
@@ -572,7 +627,7 @@ public final class HomeActivity extends Activity {
         12,remoteConnected?GREEN:AMBER,false));
     }
     if(!serverConfigured())summaryCard(scan,false);
-    if(live.length()==0){
+    if(live.length()==0&&provisional.length()==0){
       LinearLayout empty=card();
       empty.addView(text(busy?"Scanning NSE…":"No active verified research shortlist",16,INK,true));
       spaceIn(empty,7);
@@ -586,6 +641,26 @@ public final class HomeActivity extends Activity {
     for(int i=0;i<live.length();i++){
       JSONObject item=live.optJSONObject(i);
       if(item!=null)stockCard(item,i+1,false);
+    }
+    if(provisional.length()>0){
+      space(6);
+      root.addView(text("Preliminary Top 3 · awaiting historical verification",17,INK,true));
+      space(4);
+      root.addView(text("Names from the full Groww equity price screen. Not Alpha-30 recommendations.",11,AMBER,false));
+      space(7);
+      int displayed=0;
+      for(int i=0;i<provisional.length()&&displayed<Math.max(0,3-live.length());i++){
+        JSONObject lead=provisional.optJSONObject(i);
+        if(lead==null)continue;
+        boolean alreadyShown=false;
+        for(int j=0;j<live.length();j++){
+          JSONObject verifiedRow=live.optJSONObject(j);
+          if(verifiedRow!=null&&lead.optString("symbol").equals(verifiedRow.optString("symbol"))){
+            alreadyShown=true;break;
+          }
+        }
+        if(!alreadyShown)preliminaryCard(lead,++displayed);
+      }
     }
     space(8);
     root.addView(text(serverConfigured()?
