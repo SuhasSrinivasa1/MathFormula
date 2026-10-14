@@ -272,6 +272,12 @@ final class LocalDiscovery {
   private static double clamp(double x,double min,double max){return Math.max(min,Math.min(max,x));}
   private static double finite(double x){return Double.isFinite(x)?x:Double.NaN;}
   JSONObject scan(GrowwReadOnlyClient groww,Progress progress) throws Exception{
+    return scan(groww,progress,false);
+  }
+  JSONObject scanForNextSession(GrowwReadOnlyClient groww,Progress progress) throws Exception{
+    return scan(groww,progress,true);
+  }
+  private JSONObject scan(GrowwReadOnlyClient groww,Progress progress,boolean afterHours) throws Exception{
     long scanStarted=System.currentTimeMillis();
     if(!RUNNING.compareAndSet(false,true))throw new IllegalStateException("Discovery scan already active");
     prefs.edit().putLong("lastAttempt",scanStarted)
