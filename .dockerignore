@@ -1,0 +1,14 @@
+.git
+.git/**
+**/.env
+**/.env.*
+!**/.env.example
+server/data
+server/data/**
+**/*.db
+**/*.db-*
+**/__pycache__
+**/.pytest_cache
+**/*.jks
+**/*.keystore
+*.apk

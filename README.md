@@ -1,5 +1,18 @@
-# MathFormula — Alpha-30
+# MathFormula v1.9 — Groww quota-aware research alerts
 
-An Android research prototype for the fixed Alpha-30 NSE stock-screening formula (30 weighted factors). The GitHub Actions workflow builds an installable debug APK. The app is read-only; no trading orders are placed. All BUY/WAIT decisions require timestamped verified broker data and 5-minute/15-minute confirmation. The 90% win-rate objective is **not validated**.
+Two-section UI: **Live** and **Closed**. Automatic on-screen discovery and
+best-effort Android background research alerts; no trading or BUY signals.
 
-See source and CI workflow on the `feat/alpha30-android` branch. All broker credentials belong on a secure backend, never inside the APK.
+The Groww API request governor shares a conservative Live Data limit of
+**6 requests/sec and 210 requests/min** between discovery scans, quote refresh,
+background research alerts and the legacy monitoring service. Groww's published
+Live Data limit is **10 requests/sec and 300/min**. The app also enforces
+a local auth budget and cooldown on 429; it does NOT know requests made in
+other apps under the same Groww account.
+
+See [limits, limitations and background alert notes](docs/QUOTA_NOTIFICATIONS_V19.md).
+**Alpha-30 v1.0's mathematics remain unchanged**. All notification content
+is labelled Research / NOT BUY until complete model and execution verification.
+
+A deployed 24/7 scanner and server-to-phone push service remain necessary for
+reliable unattended operation; the Android OS can defer background jobs.

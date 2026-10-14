@@ -1,0 +1,40 @@
+services:
+  scanner:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_PATH: /data/mathformula.db
+      UNIVERSE_FILE: /data/universe.csv
+      EOD_DIR: /data/eod
+      EVENTS_FILE: /data/events.csv
+      FACTORS_FILE: /data/factors.csv
+    volumes:
+      - ./data:/data
+    expose:
+      - "8765"
+    healthcheck:
+      test: ["CMD","python","-c","import urllib.request;urllib.request.urlopen('http://localhost:8765/healthz',timeout=3)"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      scanner:
+        condition: service_healthy
+volumes:
+  caddy_data:
+  caddy_config:
