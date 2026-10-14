@@ -40,8 +40,12 @@ def shortlist(conn,window,day,asof_ms,top_n=30,min_traded_value=10_000_000):
         if distance< -5 or distance>20:continue
         phase="ABOVE BREAKOUT" if distance>=0 else "NEAR BREAKOUT" if distance>=-1.5 else "WATCHING"
         values=[None]*30
+        max_days={11:3,12:45,13:45,14:45,15:60,16:21,17:180}
         for f in conn.execute("SELECT factor,value,observed_ms FROM factors WHERE symbol=?",(symbol,)):
-            if f["observed_ms"]<=asof_ms:values[f["factor"]-1]=f["value"]
+            factor=f["factor"];when=f["observed_ms"]
+            ttl_days=(180 if factor<=10 else max_days.get(factor,2 if factor<=25 else 7))
+            if when<=asof_ms and asof_ms-when<=ttl_days*86400000:
+                values[factor-1]=f["value"]
         alpha=score(values,overnight=True)
         score_value=alpha["score"] if alpha["qualifiedForScoring"] else None
         details={"priorClose":prev_close,"priorDay":history[0]["day"],"avg20TurnoverInr":round(avg_turnover),

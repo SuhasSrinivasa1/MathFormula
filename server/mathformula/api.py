@@ -85,7 +85,7 @@ class Handler(BaseHTTPRequestHandler):
                     done=conn.execute("SELECT COUNT(*) n FROM outcomes").fetchone()["n"]
                     self._send(200,{"items":items,"measuredMajorMovers":done,
                         "rule":"EOD baseline to next five completed EOD sessions' high >=+10%",
-                        "selection":"Saved candidate universe, at original as-of time"});return
+                        "selection":"Pre-close shortlists saved on baseline day, never after-close candidates"});return
                 if path=="/v1/audit":
                     limit=min(100,max(1,int(parse_qs(urlparse(self.path).query).get("limit",["40"])[0])))
                     rows=_rows(conn,"SELECT * FROM audit ORDER BY id DESC LIMIT ?",(limit,))

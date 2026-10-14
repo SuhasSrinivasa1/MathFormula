@@ -149,7 +149,7 @@ class Scanner:
                 if len(sessions)<5:continue
                 expiry=sessions[4]
                 sample=[r for r in conn.execute("SELECT symbol,close FROM eod WHERE day=?",(day,))]
-                selected={r["symbol"] for r in conn.execute("SELECT symbol FROM candidates WHERE day=?",(day,))}
+                selected={r["symbol"] for r in conn.execute("SELECT symbol FROM candidates WHERE day=? AND window LIKE 'PRE_CLOSE%'",(day,))}
                 for current in sample:
                     s=current["symbol"];entry=current["close"]
                     if not entry or entry<=0:continue
@@ -161,7 +161,7 @@ class Scanner:
                     captured=int(s in selected)
                     conn.execute("""INSERT OR REPLACE INTO outcomes(day,window,symbol,horizon,peak_return_pct,
                         close_return_pct,captured,computed_ms) VALUES(?,?,?,?,?,?,?,?)""",
-                        (day,"ALL_WINDOWS",s,5,round(gain,3),round(end,3),captured,ms()))
+                        (day,"PRE_CLOSE",s,5,round(gain,3),round(end,3),captured,ms()))
                     count+=1;misses+=not captured
             if count:audit(conn,"OUTCOMES","","Five-session NSE movers reviewed",
                   {"majorMovers":count,"notShortlisted":misses,"definition":"+10% observed high within next 5 completed sessions"})
