@@ -617,9 +617,9 @@ public final class HomeActivity extends Activity {
         if(!symbol.matches("[A-Z0-9&-]{1,26}")||
            !"EQ".equals(candidate.optString("nseSeries","")))continue;
         Alpha30EvidenceStore.EvidenceScore proof=batch.get(symbol);
+        if(proof==null)continue;
         scored++;
         bestCoverage=Math.max(bestCoverage,proof.overnight.coverage);
-        if(proof==null)continue;
         if(proof.overnight.coverage>=90)sufficient++;
         if(proof.shortlistEligible()){
           try{
