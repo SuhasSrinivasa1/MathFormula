@@ -44,13 +44,42 @@ final class LocalDiscovery {
   long lastScan(){return prefs.getLong("lastScan",0);}
   String error(){return prefs.getString("lastError","");}
   boolean scanning(){return RUNNING.get();}
-  void save(JSONObject result){
+  private String istDate(long timestamp) {
+    return java.time.Instant.ofEpochMilli(timestamp).atZone(IST).toLocalDate().toString();
+  }
+  /** Most recent completed scan of each NSE session, NOT an exchange-authoritative close. */
+  JSONArray sessionSnapshots(){
+    try{return new JSONArray(prefs.getString("sessionSnapshots","[]"));}
+    catch(Exception e){return new JSONArray();}
+  }
+  JSONObject lastClosedSession(long now){
+    String today=istDate(now);
+    java.time.LocalTime clock=java.time.Instant.ofEpochMilli(now)
+        .atZone(IST).toLocalTime();
+    boolean todayFinished=!clock.isBefore(java.time.LocalTime.of(15,30));
+    JSONArray snapshots=sessionSnapshots();
+    for(int i=snapshots.length()-1;i>=0;i--){
+      JSONObject item=snapshots.optJSONObject(i);
+      if(item==null)continue;
+      String day=item.optString("sessionDate","");
+      if(day.compareTo(today)<0 || (day.equals(today)&&todayFinished))return item;
+    }
+    return new JSONObject();
+  }
+  /**
+   * Persist a full scan only after every batch has finished.
+   * A scan started before the close belongs to that trading session even when final
+   * verification finishes after 15:30; all shown quotes retain their own timestamps.
+   */
+  synchronized void save(JSONObject result){
     try{
       JSONArray previous=latest().optJSONArray("top");
       JSONArray current=result.optJSONArray("top");
       Set<String> seen=new HashSet<>();
-      if(current!=null)for(int i=0;i<current.length();i++)
-        seen.add(current.optJSONObject(i).optString("symbol"));
+      if(current!=null)for(int i=0;i<current.length();i++){
+        JSONObject row=current.optJSONObject(i);
+        if(row!=null)seen.add(row.optString("symbol"));
+      }
       JSONArray timeline=history();
       if(previous!=null){
         for(int i=0;i<previous.length();i++){
@@ -58,20 +87,77 @@ final class LocalDiscovery {
           if(!seen.contains(old.optString("symbol"))){
             JSONObject archived=new JSONObject(old.toString());
             archived.put("removedAtMs",System.currentTimeMillis());
-            archived.put("reason","Not in latest top three; replaced after a completed fresh scan");
+            archived.put("reason","Removed from automatic top three after a completed scan");
             timeline.put(archived);
           }
         }
       }
-      while(timeline.length()>80){
+      if(timeline.length()>80){
         JSONArray trimmed=new JSONArray();
-        for(int k=timeline.length()-80;k<timeline.length();k++)trimmed.put(timeline.optJSONObject(k));
+        for(int k=timeline.length()-80;k<timeline.length();k++){
+          JSONObject record=timeline.optJSONObject(k);
+          if(record!=null)trimmed.put(record);
+        }
         timeline=trimmed;
       }
-      prefs.edit().putString("history",timeline.toString())
+      long started=result.optLong("scanStartedMs",result.optLong("scannedAtMs",0));
+      String day=istDate(started);
+      JSONObject snapshot=new JSONObject(result.toString());
+      snapshot.put("sessionDate",day);
+      snapshot.put("snapshotKind","LAST_OBSERVED_SESSION_SCAN_NOT_EXCHANGE_CLOSE");
+      JSONArray sessions=sessionSnapshots(),updated=new JSONArray();
+      for(int i=0;i<sessions.length();i++){
+        JSONObject item=sessions.optJSONObject(i);
+        if(item!=null&&!day.equals(item.optString("sessionDate")))updated.put(item);
+      }
+      updated.put(snapshot);
+      if(updated.length()>35){
+        JSONArray limited=new JSONArray();
+        for(int i=updated.length()-35;i<updated.length();i++)limited.put(updated.optJSONObject(i));
+        updated=limited;
+      }
+      prefs.edit()
+        .putString("history",timeline.toString())
         .putString("latest",result.toString())
-        .putLong("lastScan",System.currentTimeMillis())
+        .putString("sessionSnapshots",updated.toString())
+        .putLong("lastScan",result.optLong("scannedAtMs",System.currentTimeMillis()))
         .putString("lastError","").apply();
+    }catch(Exception ex){failure("Could not preserve completed scan");}
+  }
+  /** Update displayed quotes without falsely reranking or changing validated breakout references. */
+  synchronized void applyQuoteRefresh(Map<String,GrowwReadOnlyClient.Market> recent){
+    if(recent==null||recent.isEmpty())return;
+    try{
+      JSONObject scan=latest();
+      JSONArray old=scan.optJSONArray("top");
+      if(old==null)return;
+      JSONArray fresh=new JSONArray();
+      for(int i=0;i<old.length();i++){
+        JSONObject item=old.optJSONObject(i);
+        if(item==null)continue;
+        JSONObject copy=new JSONObject(item.toString());
+        GrowwReadOnlyClient.Market market=recent.get(item.optString("symbol"));
+        if(market!=null&&Double.isFinite(market.price)&&market.price>0){
+          long time=System.currentTimeMillis();
+          if(market.lastTradeMs>0&&market.lastTradeMs<=time+3000&&time-market.lastTradeMs<=60_000){
+            double reference=copy.optDouble("breakoutLevel",Double.NaN);
+            copy.put("price",market.price);
+            copy.put("tradeMs",market.lastTradeMs);
+            copy.put("observedMs",time);
+            if(Double.isFinite(reference)&&reference>0)
+              copy.put("distancePct",100*(market.price/reference-1));
+            copy.put("volume",Double.isFinite(market.dayVolume)?market.dayVolume:JSONObject.NULL);
+            copy.put("averageTradePrice",Double.isFinite(market.vwap)?market.vwap:JSONObject.NULL);
+            copy.put("dayChangePct",Double.isFinite(market.change)?market.change:JSONObject.NULL);
+            copy.put("quoteUpdatedSinceScan",true);
+          }
+        }
+        fresh.put(copy);
+      }
+      scan.put("top",fresh);
+      scan.put("quoteRefreshMs",System.currentTimeMillis());
+      // Do not update scannedAtMs or session snapshots: this was NOT a new full scan.
+      prefs.edit().putString("latest",scan.toString()).apply();
     }catch(Exception ignored){}
   }
   void failure(String why){
@@ -82,7 +168,8 @@ final class LocalDiscovery {
       return new JSONObject().put("source","Groww phone discovery")
         .put("formulaVersion",Alpha30Engine.VERSION)
         .put("formulaChanged",false)
-        .put("lastCompleted",latest()).put("previouslyTracked",history())
+        .put("lastCompleted",latest()).put("closedSessions",sessionSnapshots())
+        .put("previouslyTracked",history())
         .put("lastError",safe(error())).toString(2);
     }catch(Exception ex){return "{}";}
   }
@@ -172,6 +259,7 @@ final class LocalDiscovery {
   private static double clamp(double x,double min,double max){return Math.max(min,Math.min(max,x));}
   private static double finite(double x){return Double.isFinite(x)?x:Double.NaN;}
   JSONObject scan(GrowwReadOnlyClient groww,Progress progress) throws Exception{
+    long scanStarted=System.currentTimeMillis();
     if(!RUNNING.compareAndSet(false,true))throw new IllegalStateException("Discovery scan already active");
     try{
       List<String> universe=universe(progress);
@@ -264,7 +352,7 @@ final class LocalDiscovery {
          .put("version","on-device-discovery-v1")
          .put("modelVersion",Alpha30Engine.VERSION)
          .put("formulaUnchanged",true)
-         .put("scannedAtMs",now).put("universeCount",universe.size())
+         .put("scannedAtMs",now).put("scanStartedMs",scanStarted).put("universeCount",universe.size())
          .put("quotedCount",prices.size()).put("batchesSucceeded",successfulBatches)
          .put("batchesFailed",failedBatches).put("broadCandidates",broad.size())
          .put("dailyHistoryVerified",checked).put("eligibleForResearch",valid)

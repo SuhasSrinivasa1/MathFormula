@@ -5,269 +5,362 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.net.Uri;
 import android.view.View;
-import android.widget.*;
+import android.view.Gravity;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import org.json.*;
+import org.json.JSONObject;
+import org.json.JSONArray;
 
-/** Home-first UX: open -> see newest actual qualifying research candidates. */
+/**
+ * Only two sections: LIVE (current market observations) and CLOSED (completed
+ * market-session snapshots). No buttons to refresh, start monitoring, or trade.
+ */
 public final class HomeActivity extends Activity {
+  private static final int INK=Color.rgb(26,40,57),BLUE=Color.rgb(32,98,168),
+      MUTED=Color.rgb(103,113,127),GREEN=Color.rgb(19,123,85),
+      AMBER=Color.rgb(158,98,19),RED=Color.rgb(180,59,58);
+  private static final int EXPORT=867;
   private final Handler handler=new Handler(Looper.getMainLooper());
   private final ExecutorService worker=Executors.newSingleThreadExecutor();
-  private static final int INK=Color.rgb(26,40,57),BLUE=Color.rgb(28,103,176);
-  private static final int MUTED=Color.rgb(99,111,126),AMBER=Color.rgb(161,99,19);
-  private static final int GREEN=Color.rgb(23,127,85),RED=Color.rgb(183,64,67);
-  private static final int EXPORT=867;
   private LocalDiscovery discovery;
   private SecureGrowwStore secrets;
   private GrowwReadOnlyClient groww;
   private LinearLayout root;
-  private String tab="OPPORTUNITIES",progress="";
-  private boolean busy=false;
-  private final Runnable refresh=new Runnable(){
+  private String section="LIVE",scanProgress="";
+  private boolean busy=false,quoteBusy=false;
+  private long lastQuoteAttempt=0;
+  private boolean startedWhileOpen=false;
+  private final Runnable autoUpdate=new Runnable(){
     @Override public void run(){
-      if("OPPORTUNITIES".equals(tab))ensureFresh();
-      else render();
-      handler.postDelayed(this,60000L);
+      boolean open=MarketSchedule.weekdayTradingTime(System.currentTimeMillis());
+      if(startedWhileOpen && !open && "LIVE".equals(section)) section="CLOSED";
+      startedWhileOpen=open;
+      if(open && "LIVE".equals(section)){
+        ensureFresh();
+        refreshPrices();
+      }
+      render();
+      handler.postDelayed(this,30000L);
     }
   };
-  private int px(int n){return (int)(getResources().getDisplayMetrics().density*n+.5f);}
-  private TextView text(String s,int size,int color,boolean bold){
-    TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(color);
-    if(bold)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);t.setLineSpacing(px(2),1.08f);
+  private int dp(int v){return (int)(v*getResources().getDisplayMetrics().density+.5f);}
+  private TextView text(String v,int sp,int color,boolean bold){
+    TextView t=new TextView(this);t.setText(v);t.setTextSize(sp);t.setTextColor(color);
+    if(bold)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+    t.setLineSpacing(dp(2),1.05f);
     return t;
   }
-  private GradientDrawable bg(int color){
-    GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(px(14));
-    return d;
+  private GradientDrawable rounded(int fill){
+    GradientDrawable b=new GradientDrawable();b.setColor(fill);b.setCornerRadius(dp(14));return b;
   }
-  private void gap(LinearLayout b,int x){b.addView(new View(this),new LinearLayout.LayoutParams(1,px(x)));}
+  private void space(int dp){root.addView(new View(this),new LinearLayout.LayoutParams(1,dp(dp)));}
   private LinearLayout card(){
     LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);
-    c.setPadding(px(16),px(16),px(16),px(16));c.setBackground(bg(Color.WHITE));
-    LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=px(12);
-    root.addView(c,lp);return c;
+    c.setPadding(dp(16),dp(16),dp(16),dp(16));c.setBackground(rounded(Color.WHITE));
+    LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(13);
+    root.addView(c,p);return c;
   }
-  private String clock(long ms){
-    if(ms<=0)return "Not recorded";
-    return DateTimeFormatter.ofPattern("dd MMM · HH:mm:ss 'IST'",Locale.US)
-      .withZone(ZoneId.of("Asia/Kolkata")).format(Instant.ofEpochMilli(ms));
+  private String time(long ms){
+    if(ms<=0)return "Not available";
+    return DateTimeFormatter.ofPattern("dd MMM yyyy · HH:mm:ss 'IST'",Locale.US)
+        .withZone(MarketSchedule.IST).format(Instant.ofEpochMilli(ms));
   }
-  private String p(double v){return Double.isFinite(v)?String.format(Locale.US,"₹%,.2f",v):"N/A";}
-  private String pct(double v){return Double.isFinite(v)?String.format(Locale.US,"%+.2f%%",v):"N/A";}
-  @Override public void onCreate(Bundle b){
-    super.onCreate(b);
-    secrets=new SecureGrowwStore(this);
-    groww=new GrowwReadOnlyClient(secrets);
+  private String hour(long ms){
+    if(ms<=0)return "Unknown";
+    return DateTimeFormatter.ofPattern("HH:mm:ss 'IST'",Locale.US)
+        .withZone(MarketSchedule.IST).format(Instant.ofEpochMilli(ms));
+  }
+  private String money(double v){
+    return Double.isFinite(v)?String.format(Locale.US,"₹%,.2f",v):"Unavailable";
+  }
+  private String percent(double v){
+    return Double.isFinite(v)?String.format(Locale.US,"%+.2f%%",v):"Unavailable";
+  }
+  private boolean open(){return MarketSchedule.weekdayTradingTime(System.currentTimeMillis());}
+  @Override public void onCreate(Bundle saved){
+    super.onCreate(saved);
+    secrets=new SecureGrowwStore(this);groww=new GrowwReadOnlyClient(secrets);
     discovery=new LocalDiscovery(this);
+    startedWhileOpen=open();
+    section=startedWhileOpen?"LIVE":"CLOSED";
     getWindow().setStatusBarColor(Color.rgb(247,249,252));
     getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
-    ScrollView scroll=new ScrollView(this);scroll.setBackgroundColor(Color.rgb(247,249,252));
-    scroll.setFillViewport(true);
+    ScrollView scroll=new ScrollView(this);
+    scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(247,249,252));
     root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);
-    root.setPadding(px(19),px(22),px(19),px(30));scroll.addView(root);setContentView(scroll);
+    root.setPadding(dp(20),dp(23),dp(20),dp(32));
+    scroll.addView(root);setContentView(scroll);
     render();
   }
   @Override protected void onResume(){
-    super.onResume();handler.removeCallbacks(refresh);
-    handler.postDelayed(refresh,200);
+    super.onResume();handler.removeCallbacks(autoUpdate);
+    handler.postDelayed(autoUpdate,200);
   }
-  @Override protected void onPause(){handler.removeCallbacks(refresh);super.onPause();}
+  @Override protected void onPause(){handler.removeCallbacks(autoUpdate);super.onPause();}
   @Override protected void onDestroy(){worker.shutdownNow();super.onDestroy();}
   private void ensureFresh(){
-    if(busy){render();return;}
-    if(!secrets.configured()){render();return;}
+    if(busy||quoteBusy||!open()||!secrets.configured())return;
     long now=System.currentTimeMillis();
-    if(!MarketSchedule.weekdayTradingTime(now)){render();return;}
-    long cadence=MarketSchedule.preClose(now)?5*60_000L:15*60_000L;
-    if(discovery.lastScan()>0 && now-discovery.lastScan()<cadence){render();return;}
-    busy=true;progress="Preparing NSE universe";render();
+    long interval=MarketSchedule.preClose(now)?5*60000L:15*60000L;
+    if(discovery.lastScan()>0 && now-discovery.lastScan()<interval)return;
+    busy=true;scanProgress="Checking NSE instrument universe";render();
     worker.execute(()->{
+      String note="";
       try{
-        discovery.scan(groww,step->handler.post(()->{
-          progress=step;
-          // Do not constantly rebuild every row during a multi-minute scan.
-        }));
-        progress="";
-      }catch(Exception e){
-        progress="Scan failed: "+e.getClass().getSimpleName()+" · "+shortError(e.getMessage());
-      }finally{
-        handler.post(()->{busy=false;render();});
-      }
+        discovery.scan(groww,stage->handler.post(()->scanProgress=stage));
+      }catch(Exception e){note=safeReason(e);}
+      String result=note;
+      handler.post(()->{
+        busy=false;scanProgress=result;
+        lastQuoteAttempt=0;
+        render();
+        if(result.isEmpty())refreshPrices();
+      });
     });
   }
-  private static String shortError(String e){
-    if(e==null)return "data unavailable";
-    // Never include network response bodies, credentials, URL or raw headers.
-    if(e.contains("rate limit"))return "Groww rate limit; retry automatically";
-    if(e.contains("60 completed"))return "historical candles incomplete";
-    if(e.contains("authentication")||e.contains("authorization"))return "Groww reauthentication required";
-    if(e.contains("price scan"))return "insufficient returned market coverage";
-    if(e.contains("instrument"))return "instrument list unavailable";
-    return "check connectivity and diagnostics";
+  private static String safeReason(Exception error){
+    if(error instanceof SecurityException)return "Groww sign-in could not be verified";
+    String msg=error.getMessage()==null?"":error.getMessage().toLowerCase(Locale.US);
+    if(msg.contains("rate limit")||msg.contains("429"))return "Groww rate limit reached";
+    if(msg.contains("instrument")||msg.contains("master"))return "NSE symbol list unavailable";
+    if(msg.contains("price scan"))return "Incomplete market-data coverage";
+    return "Market-data verification failed; see diagnostics";
   }
-  private void menu(){
-    LinearLayout top=new LinearLayout(this);top.setOrientation(LinearLayout.HORIZONTAL);
-    top.setGravity(android.view.Gravity.CENTER_VERTICAL);
-    LinearLayout names=new LinearLayout(this);names.setOrientation(LinearLayout.VERTICAL);
-    names.addView(text("MathFormula",28,INK,true));
-    names.addView(text("ALPHA-30 · RESEARCH",11,BLUE,true));
-    top.addView(names,new LinearLayout.LayoutParams(0,-2,1));
-    TextView settings=text("⚙",28,MUTED,false);settings.setPadding(px(12),px(5),px(9),px(5));
-    settings.setContentDescription("Groww and advanced settings");
-    settings.setOnClickListener(v->startActivity(new Intent(this,MainActivity.class)));
-    top.addView(settings);root.addView(top);gap(root,14);
-    LinearLayout tabs=new LinearLayout(this);tabs.setOrientation(LinearLayout.HORIZONTAL);
-    for(String item:new String[]{"OPPORTUNITIES","WATCHLIST","HISTORY"}){
-      String title="OPPORTUNITIES".equals(item)?"Opportunities":
-        "WATCHLIST".equals(item)?"Watchlist":"History";
-      TextView button=text(title,12,item.equals(tab)?BLUE:MUTED,item.equals(tab));
-      button.setGravity(android.view.Gravity.CENTER);button.setPadding(px(4),px(10),px(4),px(10));
-      button.setBackground(bg(item.equals(tab)?Color.rgb(229,239,249):Color.WHITE));
-      LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
-      lp.rightMargin=px(4);tabs.addView(button,lp);
-      button.setOnClickListener(v->{tab=item;render();if("OPPORTUNITIES".equals(item))ensureFresh();});
-    }
-    root.addView(tabs);gap(root,16);
-  }
-  private void health(JSONObject record){
-    long now=System.currentTimeMillis(),at=record.optLong("scannedAtMs",0);
-    boolean market=MarketSchedule.weekdayTradingTime(now);
-    long stale=MarketSchedule.preClose(now)?8*60_000L:20*60_000L;
-    boolean ready=at>0 && now-at<=stale && market;
-    LinearLayout status=card();
-    int color=busy?BLUE:!secrets.configured()?AMBER:ready?GREEN:AMBER;
-    String label=busy?"SCANNING NSE STOCKS":!secrets.configured()?"GROWW NOT CONNECTED":
-      !market?"MARKET CLOSED · LAST SESSION":ready?"LATEST SCAN AVAILABLE":"SCAN OVERDUE / NO FRESH DATA";
-    status.addView(text(label,12,color,true));gap(status,7);
-    status.addView(text(busy?(progress.isEmpty()?"Processing Groww market data":progress):
-      "Last completed NSE scan: "+clock(at),12,MUTED,false));
-    if(at>0)status.addView(text("Covered "+record.optInt("quotedCount")+" of "+
-      record.optInt("universeCount")+" NSE EQ prices · historical checks "+
-      record.optInt("dailyHistoryVerified")+" · qualified "+
-      record.optInt("eligibleForResearch"),12,MUTED,false));
-    if(!discovery.error().isEmpty())status.addView(text("Last error: "+shortError(discovery.error()),12,AMBER,false));
-    if(!market)status.addView(text("Prices are historical. A new scan starts automatically when you open the app during NSE market hours.",12,MUTED,false));
-    if(!secrets.configured())status.addView(text("Tap ⚙ to configure Groww. Your existing device credentials are retained when available.",12,MUTED,false));
-  }
-  private void render(){
-    if(root==null)return;
-    root.removeAllViews();menu();
-    JSONObject scan=discovery.latest();
-    health(scan);
-    if("HISTORY".equals(tab)){showHistory();return;}
-    if("WATCHLIST".equals(tab)){showWatchlist();return;}
-    root.addView(text("Today's Top Opportunities",19,INK,true));gap(root,5);
-    root.addView(text("Automatically ranked research setups — not BUY signals",12,MUTED,false));gap(root,13);
+  /** Refresh selected prices, without pretending the entire NSE universe was rescanned. */
+  private void refreshPrices(){
+    if(!open()||busy||quoteBusy||!secrets.configured())return;
     long now=System.currentTimeMillis();
-    long at=scan.optLong("scannedAtMs",0);
-    boolean fresh=MarketSchedule.weekdayTradingTime(now)&&at>0&&
-        now-at<=(MarketSchedule.preClose(now)?8*60_000L:20*60_000L);
+    if(now-lastQuoteAttempt<30000)return;
+    JSONArray list=discovery.latest().optJSONArray("top");
+    if(list==null||list.length()==0)return;
+    lastQuoteAttempt=now;quoteBusy=true;
+    worker.execute(()->{
+      Map<String,GrowwReadOnlyClient.Market> latest=new HashMap<>();
+      for(int i=0;i<Math.min(3,list.length());i++){
+        JSONObject pick=list.optJSONObject(i);
+        if(pick==null)continue;
+        String symbol=pick.optString("symbol","");
+        try{latest.put(symbol,groww.quote(symbol));}
+        catch(Exception ignored){} // Quoted timestamp remains stale if this call fails.
+      }
+      discovery.applyQuoteRefresh(latest);
+      handler.post(()->{quoteBusy=false;render();});
+    });
+  }
+  private void tabHeader(){
+    LinearLayout top=new LinearLayout(this);
+    top.setGravity(Gravity.CENTER_VERTICAL);
+    TextView label=text("MathFormula",26,INK,true);
+    top.addView(label,new LinearLayout.LayoutParams(0,-2,1));
+    TextView settings=text("⚙",24,MUTED,false);
+    settings.setContentDescription("Connections and advanced settings");
+    settings.setPadding(dp(11),dp(5),dp(8),dp(5));
+    settings.setOnClickListener(v->startActivity(new Intent(this,MainActivity.class)));
+    top.addView(settings);
+    root.addView(top);
+    root.addView(text("ALPHA-30 v1.0 · FIXED RESEARCH MODEL",11,BLUE,true));
+    space(18);
+    LinearLayout tabs=new LinearLayout(this);
+    tabs.setOrientation(LinearLayout.HORIZONTAL);
+    for(String item:new String[]{"LIVE","CLOSED"}){
+      TextView view=text(item.equals("LIVE")?"Live":"Closed",15,
+        item.equals(section)?BLUE:MUTED,item.equals(section));
+      view.setGravity(Gravity.CENTER);
+      view.setPadding(dp(14),dp(13),dp(14),dp(13));
+      view.setBackground(rounded(item.equals(section)?Color.rgb(230,239,248):Color.WHITE));
+      LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
+      lp.rightMargin=dp(7);tabs.addView(view,lp);
+      view.setOnClickListener(v->{
+        section=item;render();
+        if(item.equals("LIVE")){ensureFresh();refreshPrices();}
+      });
+    }
+    root.addView(tabs);space(14);
+  }
+  private void summaryCard(JSONObject scan,boolean closed){
+    LinearLayout c=card();
+    long completed=scan.optLong("scannedAtMs",0);
+    long elapsed=System.currentTimeMillis()-completed;
+    long threshold=MarketSchedule.preClose(System.currentTimeMillis())?8*60000L:20*60000L;
+    boolean recent=completed>0&&elapsed>=0&&elapsed<=threshold;
+    String state=closed?"SESSION RECORD · NOT A LIVE QUOTE":
+      !open()?"MARKET CLOSED":
+      busy?"SCANNING NSE":!secrets.configured()?"GROWW NOT CONNECTED":
+      recent?"LATEST RESEARCH SCAN AVAILABLE":"SCAN OVERDUE / NO CURRENT RESULTS";
+    int color=closed?MUTED:recent?GREEN:AMBER;
+    c.addView(text(state,12,color,true));spaceIn(c,6);
+    c.addView(text(closed?
+      "Latest session snapshot: "+time(completed):
+      busy?(scanProgress.isEmpty()?"Finding opportunities…":scanProgress):
+        "Last completed universe scan: "+time(completed),12,MUTED,false));
+    if(completed>0){
+      spaceIn(c,5);
+      c.addView(text("NSE stocks: "+scan.optInt("universeCount")+" · Quotes received: "+
+        scan.optInt("quotedCount")+" · Histories checked: "+
+        scan.optInt("dailyHistoryVerified")+" · Eligible: "+
+        scan.optInt("eligibleForResearch"),12,INK,false));
+    }
+    if(!closed&&!discovery.error().isEmpty()){
+      spaceIn(c,6);
+      c.addView(text("Data issue: "+safeReason(new IllegalStateException(discovery.error())),
+        12,AMBER,false));
+    }
+    if(closed){
+      spaceIn(c,7);
+      c.addView(text("These are the last prices actually recorded by MathFormula during the session, not verified NSE closing-auction prices.",11,AMBER,false));
+    }
+  }
+  private void spaceIn(LinearLayout c,int amount){
+    c.addView(new View(this),new LinearLayout.LayoutParams(1,dp(amount)));
+  }
+  private void stockCard(JSONObject j,int rank,boolean closed){
+    LinearLayout c=card();
+    LinearLayout title=new LinearLayout(this);title.setGravity(Gravity.CENTER_VERTICAL);
+    title.setOrientation(LinearLayout.HORIZONTAL);
+    String symbol=j.optString("symbol","UNKNOWN");
+    title.addView(text(rank+". "+symbol,18,INK,true),new LinearLayout.LayoutParams(0,-2,1));
+    title.addView(text(closed?"LAST OBSERVED":j.optString("stage","WATCHING"),
+      11,closed?MUTED:BLUE,true));c.addView(title);spaceIn(c,9);
+    double last=j.optDouble("price",Double.NaN),move=j.optDouble("dayChangePct",Double.NaN);
+    c.addView(text(money(last)+"   "+percent(move),20,INK,true));
+    spaceIn(c,10);
+    c.addView(text("Expected breakout  "+money(j.optDouble("breakoutLevel",Double.NaN)),
+      14,BLUE,true));
+    c.addView(text("Distance to resistance  "+percent(j.optDouble("distancePct",Double.NaN)),
+      12,MUTED,false));
+    spaceIn(c,10);
+    long trade=j.optLong("tradeMs",0),now=System.currentTimeMillis();
+    boolean live=!closed&&open()&&trade>0&&now>=trade&&now-trade<=60_000L;
+    c.addView(text(closed?"Recorded trade: "+time(trade):
+      "Latest trade: "+hour(trade)+(live?" · RECENT":" · STALE / UNVERIFIED"),
+      12,live?GREEN:AMBER,false));
+    if(!closed)c.addView(text(
+      "Technical watch only · waiting for completed candles, VWAP and full model",
+      12,MUTED,false));
+    else c.addView(text("Screening stage at the time: "+j.optString("stage","UNKNOWN"),
+      12,MUTED,false));
+    spaceIn(c,8);
+    c.addView(text("NO SIGNAL · Frozen Alpha-30 verification incomplete",11,AMBER,true));
+  }
+  private void renderLive(){
+    JSONObject scan=discovery.latest();
+    summaryCard(scan,false);
+    root.addView(text("Top Opportunities",20,INK,true));space(6);
+    root.addView(text("Three most recent qualifying research setups · automatic refresh",12,MUTED,false));
+    space(13);
+    long at=scan.optLong("scannedAtMs",0),now=System.currentTimeMillis();
+    long maximum=MarketSchedule.preClose(now)?8*60000L:20*60000L;
+    boolean scanFresh=open()&&at>0&&now-at>=0&&now-at<=maximum;
     JSONArray top=scan.optJSONArray("top");
-    if(!fresh||top==null||top.length()==0){
+    if(!scanFresh||top==null||top.length()==0){
       LinearLayout c=card();
-      c.addView(text(busy?"Finding fresh NSE candidates…":"No verified fresh candidates",17,INK,true));
-      gap(c,8);
-      c.addView(text(busy?"Screening in progress. Only verified data will appear.":
-        !secrets.configured()?"Groww authentication is not yet available on this installation.":
-        !MarketSchedule.weekdayTradingTime(now)?"Market is closed; prior selections are in History.":
-        "No recent complete scan or no stocks met the research filters. Old picks are not recycled.",13,MUTED,false));
+      String heading=busy?"Finding opportunities…":!open()?"Market closed":
+        "No verified fresh opportunities";
+      c.addView(text(heading,16,INK,true));spaceIn(c,7);
+      c.addView(text(busy?"Research results appear after a completed NSE scan.":
+        !open()?"View Closed for the last captured session.":
+        !secrets.configured()?"Connect Groww in Settings.":
+        "No fresh complete scan or no stocks passed the preliminary research filters. Previous picks are not recycled.",
+        13,MUTED,false));
       return;
     }
     for(int i=0;i<Math.min(3,top.length());i++){
-      JSONObject j=top.optJSONObject(i);if(j!=null)stock(j,i+1);
+      JSONObject j=top.optJSONObject(i);if(j!=null)stockCard(j,i+1,false);
     }
-    gap(root,6);
-    root.addView(text("Expected breakout is the previous 20-session high. This is a technical discovery shortlist; the complete Alpha-30 BUY gates still require independent financial, news, macro and execution data.",11,MUTED,false));
+    root.addView(text("Breakout is a prior 20-session resistance level, not a price prediction. A discovery shortlist is NOT a complete BUY recommendation.",11,MUTED,false));
   }
-  private void stock(JSONObject j,int rank){
-    LinearLayout c=card();
-    LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);
-    TextView symbol=text(rank+"  "+j.optString("symbol","UNKNOWN"),18,INK,true);
-    row.addView(symbol,new LinearLayout.LayoutParams(0,-2,1));
-    TextView stage=text(j.optString("stage","WATCHING"),11,BLUE,true);
-    row.addView(stage);c.addView(row);gap(c,10);
-    c.addView(text(p(j.optDouble("price",Double.NaN))+"   "+pct(j.optDouble("dayChangePct",Double.NaN)),
-       19,INK,true));gap(c,7);
-    double breakout=j.optDouble("breakoutLevel",Double.NaN);
-    c.addView(text("Breakout level  "+p(breakout),13,BLUE,true));
-    c.addView(text("Distance from breakout  "+pct(j.optDouble("distancePct",Double.NaN)),12,MUTED,false));
-    gap(c,7);
-    c.addView(text("Next: completed 5m/15m confirmation, volume/VWAP and remaining model gates",12,MUTED,false));
-    gap(c,7);
-    c.addView(text("Quote: "+clock(j.optLong("tradeMs",0))+
-       " · Historical resistance as of "+j.optString("priorDataAsOf","unavailable"),11,MUTED,false));
-    c.addView(text("Research only · NO SIGNAL · 60+ completed sessions checked",11,AMBER,true));
-  }
-  private void showWatchlist(){
-    root.addView(text("Watchlist",19,INK,true));gap(root,7);
-    root.addView(text("Automatically selected candidates. They change after each successfully completed discovery scan.",12,MUTED,false));
-    gap(root,10);
-    JSONArray j=discovery.latest().optJSONArray("top");
-    if(j==null||j.length()==0){
-      LinearLayout c=card();c.addView(text("No stocks currently selected",16,INK,true));
-      c.addView(text("MathFormula does not fall back to the original three stocks.",12,MUTED,false));return;
+  private void renderClosed(){
+    JSONObject closed=discovery.lastClosedSession(System.currentTimeMillis());
+    if(closed.length()==0){
+      LinearLayout c=card();c.addView(text("No completed-session record yet",17,INK,true));
+      spaceIn(c,6);
+      c.addView(text("The Closed section fills after MathFormula successfully captures an NSE scan during a trading session. It does not invent yesterday's closing prices.",13,MUTED,false));
+    }else{
+      String date=closed.optString("sessionDate","");
+      root.addView(text("Session · "+date,20,INK,true));space(10);
+      summaryCard(closed,true);
+      JSONArray picks=closed.optJSONArray("top");
+      root.addView(text("Last Tracked Opportunities",17,INK,true));space(10);
+      if(picks==null||picks.length()==0){
+        LinearLayout c=card();c.addView(text("No candidates qualified in this captured session",13,MUTED,false));
+      }else for(int i=0;i<Math.min(3,picks.length());i++){
+        JSONObject j=picks.optJSONObject(i);if(j!=null)stockCard(j,i+1,true);
+      }
     }
-    for(int i=0;i<j.length();i++)stock(j.optJSONObject(i),i+1);
-  }
-  private void showHistory(){
-    root.addView(text("Previously Tracked",19,INK,true));gap(root,7);
-    root.addView(text("Stocks removed from the automatic top three remain here for review.",12,MUTED,false));gap(root,12);
-    JSONArray arr=discovery.history();
-    if(arr.length()==0){
-      LinearLayout c=card();
-      c.addView(text("No archived selections yet",15,INK,true));
-      c.addView(text("History will accumulate as completed new scans replace earlier picks.",12,MUTED,false));
+    space(5);
+    JSONArray history=discovery.history();
+    root.addView(text("Previously Tracked",17,INK,true));space(7);
+    if(history.length()==0)root.addView(text("Stocks replaced by later scans will appear here.",12,MUTED,false));
+    for(int i=history.length()-1;i>=Math.max(0,history.length()-5);i--){
+      JSONObject j=history.optJSONObject(i);if(j==null)continue;
+      LinearLayout c=card();c.addView(text(j.optString("symbol","")+"  ·  ARCHIVED",14,INK,true));
+      spaceIn(c,4);c.addView(text("Recorded "+money(j.optDouble("price",Double.NaN))+
+        " · Breakout "+money(j.optDouble("breakoutLevel",Double.NaN)),12,MUTED,false));
+      c.addView(text("Removed "+time(j.optLong("removedAtMs",0)),11,MUTED,false));
     }
-    for(int i=arr.length()-1;i>=Math.max(0,arr.length()-20);i--){
-      JSONObject j=arr.optJSONObject(i);if(j==null)continue;
-      LinearLayout c=card();
-      c.addView(text(j.optString("symbol","UNKNOWN")+" · ARCHIVED",14,INK,true));
-      c.addView(text("Last price "+p(j.optDouble("price",Double.NaN))+
-        " · Breakout "+p(j.optDouble("breakoutLevel",Double.NaN)),12,MUTED,false));
-      c.addView(text("Archived "+clock(j.optLong("removedAtMs",0)),11,MUTED,false));
-    }
-    gap(root,4);
-    TextView export=text("Export diagnostic logs (ZIP)",13,BLUE,true);
-    export.setPadding(px(12),px(14),px(12),px(14));export.setGravity(android.view.Gravity.CENTER);
-    export.setBackground(bg(Color.WHITE));export.setOnClickListener(v->export());
+    space(12);
+    TextView export=text("Export diagnostic logs  ↗",13,BLUE,true);
+    export.setGravity(Gravity.CENTER);
+    export.setPadding(dp(12),dp(15),dp(12),dp(15));
+    export.setBackground(rounded(Color.WHITE));
+    export.setContentDescription("Save MathFormula diagnostic ZIP to Android Files");
+    export.setOnClickListener(v->exportLogs());
     root.addView(export);
-    gap(root,10);
-    root.addView(text("Historical scans and exports are stored on this device; a separate hosted NSE scanner is not yet deployed.",12,MUTED,false));
+    space(10);
+    root.addView(text("Stored snapshots can have gaps when the phone was offline. Download logs for a point-in-time audit.",11,MUTED,false));
   }
-  private void export(){
+  private void render(){
+    if(root==null)return;
+    root.removeAllViews();tabHeader();
+    if("CLOSED".equals(section))renderClosed();
+    else renderLive();
+  }
+  private void exportLogs(){
     Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
     intent.setType("application/zip");intent.addCategory(Intent.CATEGORY_OPENABLE);
-    intent.putExtra(Intent.EXTRA_TITLE,"MathFormula_Audit_"+System.currentTimeMillis()+".zip");
-    startActivityForResult(intent,EXPORT);
+    intent.putExtra(Intent.EXTRA_TITLE,"MathFormula_Alpha30_"+System.currentTimeMillis()+".zip");
+    try{startActivityForResult(intent,EXPORT);}
+    catch(Exception ignored){Toast.makeText(this,"Android Files not available",Toast.LENGTH_LONG).show();}
   }
   @Override protected void onActivityResult(int request,int result,Intent data){
     super.onActivityResult(request,result,data);
     if(request!=EXPORT||result!=RESULT_OK||data==null||data.getData()==null)return;
     Uri uri=data.getData();
     worker.execute(()->{
-      String err=null;
+      String issue=null;
       try{
+        // Legacy manually watched symbols are diagnostic history, not active Top 3.
         String manual=getPreferences(MODE_PRIVATE).getString("watchlist","TARIL,GAEL,ADVANCE");
-        List<String> stocks=new ArrayList<>();
-        for(String item:manual.split(",")){String s=item.trim();if(s.matches("[A-Z0-9&-]{1,26}"))stocks.add(s);}
-        DiagnosticExporter.save(getApplicationContext(),uri,new WatchStore(this),stocks,
+        List<String> selected=new ArrayList<>();
+        for(String entry:manual.split(",")){
+          String symbol=entry.trim();
+          if(symbol.matches("[A-Z0-9&-]{1,26}"))selected.add(symbol);
+        }
+        DiagnosticExporter.save(getApplicationContext(),uri,new WatchStore(this),selected,
           getPreferences(MODE_PRIVATE).getString("server_url",""),
           secrets.get("server_viewer_token"));
-      }catch(Exception ex){err=ex.getClass().getSimpleName();}
-      final String error=err;
-      handler.post(()->Toast.makeText(this,error==null?"ZIP saved. You can upload it here.":
-        "Export unavailable: "+error,Toast.LENGTH_LONG).show());
+      }catch(Exception e){issue=e.getClass().getSimpleName();}
+      String problem=issue;
+      handler.post(()->Toast.makeText(this,problem==null?
+        "Logs saved. You can upload the ZIP for analysis.":
+        "Export failed: "+problem,Toast.LENGTH_LONG).show());
     });
   }
 }
