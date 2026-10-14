@@ -62,7 +62,7 @@ public final class HomeActivity extends Activity {
       // Keep the user's selected section. Closing bell does not close a valid research watch.
       startedWhileOpen=open;
       if(serverConfigured())fetchRemote();
-      else if(open && "LIVE".equals(section)){
+      else if(open){ // Maintain research scan even when user is viewing Closed.
         ensureFresh();
         refreshPrices();
         evaluateAlerts();
@@ -178,16 +178,42 @@ public final class HomeActivity extends Activity {
       });
     });
   }
-  private void ensureFresh(){
-    if(busy||quoteBusy||!open()||!secrets.configured())return;
+  private void ensureFresh(){runFullScan(false);}
+  private void manualScan(){
+    if(serverConfigured()){
+      remoteLastAttempt=0;
+      fetchRemote();
+      Toast.makeText(this,"Refreshing authoritative scanner feed",Toast.LENGTH_SHORT).show();
+      return;
+    }
+    if(!secrets.configured()){
+      Toast.makeText(this,"Save and verify Groww credentials in Settings first",Toast.LENGTH_LONG).show();return;
+    }
+    if(!open()){
+      Toast.makeText(this,"Market is closed. Live NSE scans resume in the next trading session.",Toast.LENGTH_LONG).show();
+      return;
+    }
+    if(busy||discovery.scanning()){
+      Toast.makeText(this,"NSE scan already running · see live progress",Toast.LENGTH_SHORT).show();return;
+    }
+    if(System.currentTimeMillis()-discovery.lastAttempt()<60000L){
+      Toast.makeText(this,"A full scan was attempted recently. Allow one minute before retrying.",Toast.LENGTH_LONG).show();
+      return;
+    }
+    runFullScan(true);
+  }
+  private void runFullScan(boolean force){
+    if(busy||quoteBusy||!open()||!secrets.configured()||discovery.scanning())return;
     long now=System.currentTimeMillis();
     long interval=MarketSchedule.preClose(now)?5*60000L:15*60000L;
-    if(discovery.lastScan()>0 && now-discovery.lastScan()<interval)return;
-    busy=true;scanProgress="Checking NSE instrument universe";render();
+    if(!force && discovery.lastScan()>0 && now-discovery.lastScan()<interval)return;
+    // A failed scan is NOT "completed"; retry with a bounded minimum interval.
+    if(!force && discovery.lastAttempt()>0 && now-discovery.lastAttempt()<2*60000L)return;
+    busy=true;scanProgress="Updating NSE symbol master and fetching Groww prices";render();
     worker.execute(()->{
       String note="";
       try{
-        discovery.scan(groww,stage->handler.post(()->scanProgress=stage));
+        discovery.scan(groww,stage->handler.post(()->{scanProgress=stage;render();}));
       }catch(Exception e){note=safeReason(e);}
       String result=note;
       handler.post(()->{
@@ -239,6 +265,73 @@ public final class HomeActivity extends Activity {
       discovery.applyQuoteRefresh(latest);
       handler.post(()->{quoteBusy=false;render();});
     });
+  }
+  private long nextScanTime(){
+    long now=System.currentTimeMillis();
+    if(open()){
+      long interval=MarketSchedule.preClose(now)?5*60000L:15*60000L;
+      long previous=discovery.lastScan();
+      if(previous==0)return now;
+      return Math.max(now,previous+interval);
+    }
+    java.time.ZonedDateTime z=Instant.ofEpochMilli(now).atZone(MarketSchedule.IST);
+    java.time.ZonedDateTime candidate=z.toLocalDate().atTime(9,15).atZone(MarketSchedule.IST);
+    if(!candidate.isAfter(z))candidate=candidate.plusDays(1);
+    while(candidate.getDayOfWeek()==java.time.DayOfWeek.SATURDAY||
+      candidate.getDayOfWeek()==java.time.DayOfWeek.SUNDAY)candidate=candidate.plusDays(1);
+    return candidate.toInstant().toEpochMilli();
+  }
+  private void scanStatusCard(){
+    LinearLayout c=card();
+    boolean marketOpen=open();
+    String state=serverConfigured()?"SERVER VIEW":busy||discovery.scanning()?
+      "SCAN RUNNING":!marketOpen?"MARKET CLOSED":"AUTO DISCOVERY ACTIVE";
+    c.addView(text("Scanner status  ·  "+state,15,
+      busy||discovery.scanning()?BLUE:marketOpen?GREEN:AMBER,true));
+    spaceIn(c,7);
+    if(serverConfigured()){
+      c.addView(text("Last server sync: "+time(remoteLastSuccess),12,MUTED,false));
+      c.addView(text("Viewer refresh: every 30 seconds while this screen is open",11,MUTED,false));
+      c.addView(text(remoteConnected?"Scanner API connected":remoteError.isEmpty()?
+        "Awaiting scanner response":remoteError,12,remoteConnected?GREEN:AMBER,false));
+    }else{
+      c.addView(text("Last full successful scan: "+time(discovery.lastScan()),12,INK,false));
+      c.addView(text("Last scan attempt: "+time(discovery.lastAttempt()),12,MUTED,false));
+      c.addView(text("Result: "+discovery.lastAttemptState(),12,
+        discovery.error().isEmpty()?MUTED:AMBER,false));
+      if(busy||discovery.scanning()){
+        spaceIn(c,5);
+        c.addView(text("Current progress: "+(scanProgress.isEmpty()?"Scanning NSE…":scanProgress),
+          12,BLUE,true));
+      }
+      JSONObject latest=discovery.latest();
+      if(discovery.lastScan()>0){
+        spaceIn(c,5);
+        c.addView(text("Stocks in master: "+latest.optInt("universeCount",0)+
+          " · Quotes received: "+latest.optInt("quotedCount",0)+
+          " · History checked: "+latest.optInt("dailyHistoryVerified",0)+
+          " · Research-qualified: "+latest.optInt("eligibleForResearch",0),
+          11,MUTED,false));
+        c.addView(text("Research watches shown: "+ledger.live().length()+
+          " · only candidates meeting verified screening filters",11,MUTED,false));
+      }
+      spaceIn(c,7);
+      c.addView(text("Broad NSE scan: every 15 min (09:15–14:29), every 5 min (14:30–15:29).",11,MUTED,false));
+      c.addView(text("Top-3 quote check: every 30 sec while app is open. Background checks: ~15 min, Android-controlled.",11,MUTED,false));
+      c.addView(text("Next eligible scan: "+time(nextScanTime())+
+        (marketOpen?"":" · weekday estimate; verify NSE holidays"),11,BLUE,true));
+    }
+    spaceIn(c,11);
+    android.widget.Button button=new android.widget.Button(this);
+    button.setAllCaps(false);button.setText(serverConfigured()?"Refresh scanner feed":"Scan Now");
+    button.setTextSize(13);button.setTextColor(Color.WHITE);
+    button.setBackground(rounded(BLUE));button.setEnabled(!busy&&!discovery.scanning()&&!remoteBusy);
+    button.setOnClickListener(v->manualScan());
+    c.addView(button,new LinearLayout.LayoutParams(-1,dp(43)));
+    if(!marketOpen && !serverConfigured()){
+      spaceIn(c,6);
+      c.addView(text("After-hours: no fresh trade verification. Historical research remains visible if captured earlier.",11,AMBER,false));
+    }
   }
   private void tabHeader(){
     LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);
@@ -437,7 +530,9 @@ public final class HomeActivity extends Activity {
         (remoteConnected?"No active scanner recommendations; no stocks are invented.":
           "Cannot load authoritative recommendations. Check server status in Settings."):
         !secrets.configured()?"Connect Groww in Settings for local research-only discovery.":
-        "A completed NSE scan is required; no cached candidate is presented as new.",12,MUTED,false));
+        !open()?"Market is closed and there is no previously completed shortlist on this install. Next scan runs in market hours.":
+        discovery.lastScan()==0?"NSE discovery has not finished successfully. See scanner status and tap Scan Now.":
+        "Full discovery finished, but no stocks passed the technical, liquidity and timestamp filters. See coverage above.",12,MUTED,false));
     }
     for(int i=0;i<live.length();i++){
       JSONObject item=live.optJSONObject(i);
@@ -446,7 +541,7 @@ public final class HomeActivity extends Activity {
     space(8);
     root.addView(text(serverConfigured()?
       "Only fresh server-verified 30-factor decisions may display BUY eligibility; never order automatically.":
-      "LOCAL RESEARCH MODE · Configure an independent scanner for full factor and trading validation.",
+      "GROWW-ONLY RESEARCH MODE · Broader company, catalyst, macro and execution evidence is still required before a verified BUY.",
       11,MUTED,false));
   }
   private void renderClosed(){
@@ -508,6 +603,7 @@ public final class HomeActivity extends Activity {
   private void render(){
     if(root==null)return;
     root.removeAllViews();tabHeader();
+    scanStatusCard();
     if("CLOSED".equals(section))renderClosed();
     else renderLive();
   }
