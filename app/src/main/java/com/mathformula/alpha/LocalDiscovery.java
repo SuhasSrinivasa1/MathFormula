@@ -292,6 +292,8 @@ final class LocalDiscovery {
     }
     List<String> stocks=new ArrayList<>();
     Set<String> unique=new HashSet<>();
+    int nseCash=0,excludedNonEquity=0,excludedSeries=0,missingSymbol=0;
+    Map<String,Integer> acceptedSeries=new TreeMap<>();
     try(BufferedReader reader=new BufferedReader(new InputStreamReader(
         new FileInputStream(file),StandardCharsets.UTF_8))){
       String head=reader.readLine();
@@ -303,8 +305,6 @@ final class LocalDiscovery {
          symbol=column(keys,"trading_symbol");
       if(ex<0||seg<0||series<0||symbol<0)throw new IOException("Groww instrument file schema changed");
       String line;
-      int nseCash=0,excludedNonEquity=0,excludedSeries=0,missingSymbol=0;
-      Map<String,Integer> acceptedSeries=new TreeMap<>();
       while((line=reader.readLine())!=null){
         List<String> row=csv(line);
         if(row.size()<=Math.max(Math.max(ex,seg),Math.max(series,symbol)))continue;
