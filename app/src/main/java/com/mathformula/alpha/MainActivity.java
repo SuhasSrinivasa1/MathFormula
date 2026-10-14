@@ -176,7 +176,7 @@ public final class MainActivity extends Activity {
     return result;
   }
   private long lastVerified(){
-    return getPreferences(MODE_PRIVATE).getLong(KEY_VERIFIED_AT,0L);
+    return getSharedPreferences("mathformula_groww_connection_v22",MODE_PRIVATE).getLong(KEY_VERIFIED_AT,0L);
   }
   private boolean verifiedRecently(){
     long age=System.currentTimeMillis()-lastVerified();
@@ -215,7 +215,7 @@ public final class MainActivity extends Activity {
       if(!secret.isEmpty())vault.put("totp_secret",secret);
       if(changed){
         client.resetSession();
-        getPreferences(MODE_PRIVATE).edit().remove(KEY_VERIFIED_AT).remove(KEY_LAST_TRADE).apply();
+        getSharedPreferences("mathformula_groww_connection_v22",MODE_PRIVATE).edit().remove(KEY_VERIFIED_AT).remove(KEY_LAST_TRADE).apply();
       }
       growwConnectionMessage=changed?"Credentials encrypted and saved · verify using Refresh & Connect":
         "Saved credentials retained · use Refresh & Connect to verify access";
@@ -258,12 +258,12 @@ public final class MainActivity extends Activity {
       handler.post(()->{
         growwChecking=false;
         if(failure.isEmpty()){
-          getPreferences(MODE_PRIVATE).edit()
+          getSharedPreferences("mathformula_groww_connection_v22",MODE_PRIVATE).edit()
             .putLong(KEY_VERIFIED_AT,System.currentTimeMillis())
             .putLong(KEY_LAST_TRADE,lastTrade).apply();
           growwConnectionMessage="Groww authenticated · read-only API response verified";
         }else{
-          getPreferences(MODE_PRIVATE).edit().remove(KEY_VERIFIED_AT).apply();
+          getSharedPreferences("mathformula_groww_connection_v22",MODE_PRIVATE).edit().remove(KEY_VERIFIED_AT).apply();
           growwConnectionMessage=failure;
         }
         render();
@@ -293,7 +293,7 @@ public final class MainActivity extends Activity {
       gap(connection,4);
       connection.addView(text("Last successful API verification: "+clock(lastVerified()),
         11,MUTED,false));
-      long exchangeAt=getPreferences(MODE_PRIVATE).getLong(KEY_LAST_TRADE,0);
+      long exchangeAt=getSharedPreferences("mathformula_groww_connection_v22",MODE_PRIVATE).getLong(KEY_LAST_TRADE,0);
       if(exchangeAt>0){
         connection.addView(text("Quote exchange time: "+clock(exchangeAt)+
           " · may be old outside NSE hours",11,MUTED,false));
