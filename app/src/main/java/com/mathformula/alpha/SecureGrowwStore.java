@@ -50,7 +50,9 @@ final class SecureGrowwStore {
       return new String(cipher.doFinal(Base64.decode(ct,Base64.NO_WRAP)),StandardCharsets.UTF_8);
     }catch(Exception ex){return "";}
   }
-  synchronized void clearSession(){pref.edit().remove("access_token_iv").remove("access_token_ct").apply();}
+  synchronized long sessionMs(){return pref.getLong("session_obtained_ms",0L);}
+  synchronized void sessionMs(long when){pref.edit().putLong("session_obtained_ms",when).apply();}
+  synchronized void clearSession(){pref.edit().remove("access_token_iv").remove("access_token_ct").remove("session_obtained_ms").apply();}
   synchronized void clearAll(){pref.edit().clear().apply();}
   boolean configured(){return !get("totp_token").isEmpty() && !get("totp_secret").isEmpty();}
 }

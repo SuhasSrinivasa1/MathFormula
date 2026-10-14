@@ -1,6 +1,9 @@
 package com.mathformula.alpha;
 
 import android.app.Activity;
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -45,7 +48,7 @@ public final class HomeActivity extends Activity {
   private LinearLayout root;
   private String section="LIVE",scanProgress="";
   private boolean busy=false,quoteBusy=false;
-  private long lastQuoteAttempt=0;
+  private long lastQuoteAttempt=0,lastAlertAttempt=0;
   private boolean startedWhileOpen=false;
   private String lastVisibleDate="";
   private final Runnable autoUpdate=new Runnable(){
@@ -57,6 +60,7 @@ public final class HomeActivity extends Activity {
       if(open && "LIVE".equals(section)){
         ensureFresh();
         refreshPrices();
+        evaluateAlerts();
       }
       render();
       handler.postDelayed(this,30000L);
@@ -100,6 +104,11 @@ public final class HomeActivity extends Activity {
     super.onCreate(saved);
     secrets=new SecureGrowwStore(this);groww=new GrowwReadOnlyClient(secrets);
     discovery=new LocalDiscovery(this);
+    ResearchAlerts.channel(this);
+    ResearchJob.schedule(this);
+    if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){
+      requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},904);
+    }
     startedWhileOpen=open();
     lastVisibleDate=todayIst();
     section=startedWhileOpen?"LIVE":"CLOSED";
@@ -145,6 +154,19 @@ public final class HomeActivity extends Activity {
         render();
         if(result.isEmpty())refreshPrices();
       });
+    });
+  }
+  private void evaluateAlerts(){
+    long now=System.currentTimeMillis();
+    if(!open()||busy||quoteBusy||!secrets.configured()||now-lastAlertAttempt<5*60000L)return;
+    JSONObject snap=discovery.latest();
+    long last=snap.optLong("scannedAtMs",0);
+    if(last<=0||now-last>25*60000L)return;
+    lastAlertAttempt=now;
+    worker.execute(()->{
+      try{ResearchAlerts.evaluate(this,groww,snap);}
+      catch(Exception ignored){}
+      handler.post(this::render);
     });
   }
   private static String safeReason(Exception error){
@@ -228,6 +250,20 @@ public final class HomeActivity extends Activity {
         scan.optInt("quotedCount")+" · Histories checked: "+
         scan.optInt("dailyHistoryVerified")+" · Eligible: "+
         scan.optInt("eligibleForResearch"),12,INK,false));
+    }
+    if(!closed){
+    spaceIn(c,7);
+    boolean alertsOn=ResearchAlerts.permission(this);
+    c.addView(text(alertsOn?
+      "Research alerts enabled · Android schedules checks approximately every 15 minutes":
+      "Notifications disabled · enable permission in Android app settings",
+      12,alertsOn?GREEN:AMBER,false));
+    long alertChecked=ResearchAlerts.lastCheck(this);
+    c.addView(text("Last alert check: "+time(alertChecked)+
+      " · "+ResearchAlerts.lastState(this),11,MUTED,false));
+    spaceIn(c,6);
+    c.addView(text("Groww budget: app caps 150 live calls/min vs Groww 300/min. "+
+      "Quota includes any other apps using the same account.",11,MUTED,false));
     }
     if(!closed&&!discovery.error().isEmpty()){
       spaceIn(c,6);

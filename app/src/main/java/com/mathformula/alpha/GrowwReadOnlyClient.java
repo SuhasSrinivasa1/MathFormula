@@ -72,8 +72,14 @@ final class GrowwReadOnlyClient {
   private String token() throws Exception {
     String t=secrets.get("access_token");
     java.time.ZonedDateTime now=java.time.ZonedDateTime.now(IST);
-    if(!t.isEmpty()&&sessionObtainedAt>0 && now.toInstant().toEpochMilli()-sessionObtainedAt<20L*3600000L
-       && now.getHour()!=5)return t;
+    if(sessionObtainedAt==0)sessionObtainedAt=secrets.sessionMs();
+    java.time.ZonedDateTime expiry=null;
+    if(sessionObtainedAt>0){
+      java.time.ZonedDateTime original=java.time.Instant.ofEpochMilli(sessionObtainedAt).atZone(IST);
+      java.time.ZonedDateTime dailyCutoff=original.toLocalDate().atTime(6,0).atZone(IST);
+      expiry=original.isBefore(dailyCutoff)?dailyCutoff:dailyCutoff.plusDays(1);
+    }
+    if(!t.isEmpty()&&expiry!=null&&now.isBefore(expiry.minusMinutes(1)))return t;
     if(!secrets.configured())throw new IllegalStateException("Enter Groww TOTP token and secret in Settings");
     if(System.currentTimeMillis()-lastAuthAttempt<60000)throw new IllegalStateException("Authentication cooldown; retry in one minute");
     lastAuthAttempt=System.currentTimeMillis();
@@ -87,6 +93,7 @@ final class GrowwReadOnlyClient {
     }
     if(t.isEmpty())throw new IllegalStateException("Groww did not return an access token");
     secrets.put("access_token",t);sessionObtainedAt=System.currentTimeMillis();
+    secrets.sessionMs(sessionObtainedAt);
     return t;
   }
   synchronized void resetSession(){sessionObtainedAt=0;secrets.clearSession();}

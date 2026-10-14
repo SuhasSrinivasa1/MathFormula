@@ -134,15 +134,20 @@ public final class ScannerService extends Service {
     store.audit("MONITOR","SESSION","STOPPED","ACTIVE","User-started read-only session",0);
     loop.post(pulse);return START_NOT_STICKY;
   }
+  /** Latest auto-discovered candidates only; never restore hardcoded original picks. */
   private List<String> watchlist(){
-    String configured=getSharedPreferences("MainActivity",MODE_PRIVATE).getString("watchlist","TARIL,GAEL,ADVANCE");
-    List<String> out=new ArrayList<>();
-    for(String item:configured.split(",")){
-      String v=item.trim().toUpperCase(Locale.US);
-      if(v.matches("[A-Z0-9&-]{1,26}")&&!out.contains(v))out.add(v);
-      if(out.size()==20)break;
+    List<String> symbols=new ArrayList<>();
+    org.json.JSONObject record=new LocalDiscovery(this).latest();
+    long stamp=record.optLong("scannedAtMs",0L);
+    if(stamp<=0||System.currentTimeMillis()-stamp>25*60_000L)return symbols;
+    org.json.JSONArray top=record.optJSONArray("top");
+    if(top==null)return symbols;
+    for(int i=0;i<Math.min(3,top.length());i++){
+      org.json.JSONObject stock=top.optJSONObject(i);if(stock==null)continue;
+      String name=stock.optString("symbol","");
+      if(name.matches("[A-Z0-9&-]{1,26}")&&!symbols.contains(name))symbols.add(name);
     }
-    return out;
+    return symbols;
   }
   private void fetchCycle(){
     busy=true;work.execute(()->{
@@ -179,10 +184,7 @@ public final class ScannerService extends Service {
             System.currentTimeMillis(),true,m.two5m,fifteenConfirmed,m.aboveVwap5&&m.aboveVwap15);
           String previous=store.get(symbol).optString("stage","");
           store.put(WatchState.json(m,p,System.currentTimeMillis()));
-          if(p.fresh&&!p.stage.equals(previous)&&
-              (WatchState.CROSSED.equals(p.stage)||WatchState.CONFIRMING.equals(p.stage)||WatchState.GATES_PENDING.equals(p.stage))) {
-            notifyWatch(symbol,p.stage,m);
-          }
+          // The shared ResearchAlerts notifier handles deduplication and accurate labels.
           success++;
         }catch(Exception ex){
           lastFailure=symbol+": "+(ex.getMessage()==null?"Groww unavailable":ex.getMessage());
@@ -190,6 +192,7 @@ public final class ScannerService extends Service {
         }
       }
       boolean okay=success==symbols.size()&&success>0;
+      if(fullFive&&success>0)ResearchAlerts.evaluate(this,client,new LocalDiscovery(this).latest());
       if(MarketSchedule.checkpoint(now)){
         StringBuilder shortlist=new StringBuilder();
         for(String symbol:symbols){

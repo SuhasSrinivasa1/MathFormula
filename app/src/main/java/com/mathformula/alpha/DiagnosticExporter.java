@@ -76,7 +76,7 @@ final class DiagnosticExporter {
   static JSONObject manifest(boolean hasServer,String status,int obsLines,int auditLines) throws Exception{
     JSONObject manifest=new JSONObject();
     manifest.put("exportSchema","MathFormula-diagnostic-v1");
-    manifest.put("appRelease","1.6.0");
+    manifest.put("appRelease","1.8.0");
     manifest.put("formulaVersion",Alpha30Engine.VERSION);
     manifest.put("generatedUtcMs",System.currentTimeMillis());
     manifest.put("hasServerData",hasServer);
@@ -114,6 +114,13 @@ final class DiagnosticExporter {
         entry(zip,"manifest.json",manifest(serverData!=null,serverResult,
           countLines(recent),countLines(events)).toString(2));
         entry(zip,"fixed_formula.json",modelSpec().toString(2));
+        JSONObject quota=new JSONObject().put("rules",GrowwQuota.policy())
+          .put("localCounters",GrowwQuota.counters())
+          .put("lastResearchAlertCheckMs",ResearchAlerts.lastCheck(ctx))
+          .put("lastResearchAlertResult",ResearchAlerts.lastState(ctx))
+          .put("notificationsEnabled",ResearchAlerts.permission(ctx))
+          .put("warning","Groww rate limits are shared with other apps; account usage cannot be verified here.");
+        entry(zip,"quota_and_alert_health.json",quota.toString(2));
         entry(zip,"local_watchlist_and_health.json",localSummary(state,symbols).toString(2));
         // Automatic NSE discovery shortlist, coverage and archived promotions; no authentication fields.
         entry(zip,"local_nse_discovery.json",new LocalDiscovery(ctx).exportJson());
