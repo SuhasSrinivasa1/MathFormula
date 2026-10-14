@@ -51,34 +51,44 @@ jobs:
       - name: Stage APK
         run: |
           if [[ "$STABLE_SIGNING_CONFIGURED" == "true" ]]; then
-            cp app/build/outputs/apk/release/app-release.apk MathFormula-v2.5.0-Stable.apk
+            cp app/build/outputs/apk/release/app-release.apk MathFormula-v2.6.0-Stable.apk
           else
-            cp app/build/outputs/apk/release/app-release-unsigned.apk MathFormula-v2.5.0-UNSIGNED.apk
+            cp app/build/outputs/apk/release/app-release-unsigned.apk MathFormula-v2.6.0-UNSIGNED.apk
           fi
       - name: Upload stable signed release APK
         if: env.STABLE_SIGNING_CONFIGURED == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: MathFormula-v2.5.0-Stable
-          path: MathFormula-v2.5.0-Stable.apk
+          name: MathFormula-v2.6.0-Stable
+          path: MathFormula-v2.6.0-Stable.apk
           if-no-files-found: error
       - name: Upload unsigned release for secure offline signing
         if: env.STABLE_SIGNING_CONFIGURED != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: MathFormula-v2.5.0-UNSIGNED
-          path: MathFormula-v2.5.0-UNSIGNED.apk
+          name: MathFormula-v2.6.0-UNSIGNED
+          path: MathFormula-v2.6.0-UNSIGNED.apk
+          if-no-files-found: error
+      - name: Stage Android SDK signing utility for local signing
+        if: env.STABLE_SIGNING_CONFIGURED != 'true'
+        run: cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" apksigner.jar
+      - name: Upload Android signing utility
+        if: env.STABLE_SIGNING_CONFIGURED != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MathFormula-v2.6.0-apksigner
+          path: apksigner.jar
           if-no-files-found: error
       - name: Publish signed release only
-        if: env.STABLE_SIGNING_CONFIGURED == 'true' && github.ref == 'refs/heads/feat/v25-afterhours'
+        if: env.STABLE_SIGNING_CONFIGURED == 'true' && github.ref == 'refs/heads/feat/v26-full-nse-audit'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v2.5.0 >/dev/null 2>&1; then
-            gh release edit v2.5.0 --target "$GITHUB_SHA" --title "MathFormula v2.5 next-session research"
+          if gh release view v2.6.0 >/dev/null 2>&1; then
+            gh release edit v2.6.0 --target "$GITHUB_SHA" --title "MathFormula v2.6 next-session research"
           else
-            gh release create v2.5.0 --target "$GITHUB_SHA" \
+            gh release create v2.6.0 --target "$GITHUB_SHA" \
               --title "MathFormula v2.4 stable-signing baseline" \
               --notes "Persistent Android package and signing identity. Signer certificate must match subsequent updates."
           fi
-          gh release upload v2.5.0 MathFormula-v2.5.0-Stable.apk --clobber
+          gh release upload v2.6.0 MathFormula-v2.6.0-Stable.apk --clobber
