@@ -26,11 +26,15 @@ final class GrowwReadOnlyClient {
   private final SecureGrowwStore secrets;
   private long lastAuthAttempt=0;
   private long sessionObtainedAt=0;
+  private final java.util.Map<String,String> dailyCacheDate=new java.util.HashMap<>();
+  private final java.util.Map<String,Double> dailyCacheHigh=new java.util.HashMap<>();
+  private final java.util.Map<String,String> dailyCacheAsOf=new java.util.HashMap<>();
   GrowwReadOnlyClient(SecureGrowwStore secrets){this.secrets=secrets;}
   static final class Market {
     String symbol; double price=Double.NaN,change=Double.NaN,vwap=Double.NaN,bid=Double.NaN,ask=Double.NaN;
     double high=Double.NaN,low=Double.NaN,dayVolume=Double.NaN,spreadBps=Double.NaN;
     long lastTradeMs;int fiveCount, fifteenCount;
+    double breakoutLevel=Double.NaN; String referenceAsOf="",referenceSource="";boolean two5m=false;
     double lastFiveClose=Double.NaN, lastFifteenClose=Double.NaN;
     boolean aboveVwap5=false, aboveVwap15=false;
     String note="";
@@ -135,6 +139,10 @@ final class GrowwReadOnlyClient {
       m.lastFiveClose=bars.get(bars.size()-1)[1];
       m.aboveVwap5=Double.isFinite(m.vwap)&&m.lastFiveClose>m.vwap;
     }
+    if(bars.size()>=2 && Double.isFinite(m.breakoutLevel)&&Double.isFinite(m.vwap)){
+      int n=bars.size();double[] previous=bars.get(n-2),current=bars.get(n-1);
+      m.two5m=current[0]-previous[0]==300000L && previous[1]>m.breakoutLevel && current[1]>m.breakoutLevel && previous[1]>m.vwap && current[1]>m.vwap;
+    }
     if(bars.size()>=3){
       // Require 3 consecutive completed 5-minute candles aligned to a fifteen-minute window.
       int n=bars.size();double[] a=bars.get(n-3),b=bars.get(n-2),c=bars.get(n-1);
@@ -144,6 +152,42 @@ final class GrowwReadOnlyClient {
         m.aboveVwap15=Double.isFinite(m.vwap)&&c[1]>m.vwap;
       }
     }
+  }
+  /**
+   * Compute prior 20 completed NSE-session highs using Groww daily history. This is an observed
+   * breakout reference, not an estimated profit target or a predicted 80% gain.
+   */
+  void dailyReference(Market m) throws Exception {
+    LocalDate today=LocalDate.now(IST);
+    String session=today.toString();
+    Double previous=dailyCacheHigh.get(m.symbol);
+    if(session.equals(dailyCacheDate.get(m.symbol)) && previous!=null){
+      m.breakoutLevel=previous;m.referenceAsOf=dailyCacheAsOf.get(m.symbol);
+      m.referenceSource="Groww prior 20 daily candles";return;
+    }
+    LocalDate start=today.minusDays(58),end=today.minusDays(1);
+    String path="/v1/historical/candles?exchange=NSE&segment=CASH&groww_symbol="+encoded("NSE-"+m.symbol)
+      +"&start_time="+encoded(start+" 09:15:00")+"&end_time="+encoded(end+" 15:30:00")
+      +"&candle_interval=1day";
+    JSONObject result=call("GET",path,token(),null),payload=result.optJSONObject("payload");
+    JSONArray candles=payload==null?null:payload.optJSONArray("candles");
+    if(candles==null)throw new IllegalStateException("No Groww daily candles");
+    List<double[]> observed=new ArrayList<>();
+    for(int i=0;i<candles.length();i++){
+      JSONArray a=candles.optJSONArray(i);if(a==null||a.length()<5)continue;
+      long ts=readTime(a.opt(0)); if(ts<=0)continue;
+      LocalDate day=Instant.ofEpochMilli(ts).atZone(IST).toLocalDate();
+      if(!day.isBefore(today))continue;
+      double high=a.optDouble(2,Double.NaN);
+      if(Double.isFinite(high)&&high>0)observed.add(new double[]{ts,high});
+    }
+    observed.sort((a,b)->Double.compare(a[0],b[0]));
+    if(observed.size()<20)throw new IllegalStateException("20 completed NSE daily candles unavailable");
+    int startIdx=observed.size()-20;double maximum=0;
+    for(int i=startIdx;i<observed.size();i++)maximum=Math.max(maximum,observed.get(i)[1]);
+    String asOf=Instant.ofEpochMilli((long)observed.get(observed.size()-1)[0]).atZone(IST).toLocalDate().toString();
+    dailyCacheDate.put(m.symbol,session);dailyCacheHigh.put(m.symbol,maximum);dailyCacheAsOf.put(m.symbol,asOf);
+    m.breakoutLevel=maximum;m.referenceAsOf=asOf;m.referenceSource="Groww prior 20 daily candles";
   }
   private long readTime(Object t){
     if(t instanceof Number){long v=((Number)t).longValue();return v<100000000000L?v*1000:v;}
