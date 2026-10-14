@@ -255,6 +255,10 @@ final class LocalDiscovery {
         .put("formulaChanged",false)
         .put("lastCompleted",latest()).put("closedSessions",sessionSnapshots())
         .put("previouslyTracked",history())
+        .put("preliminaryTopThree",preview())
+        .put("scanProgress",inProgress())
+        .put("lastAttemptMs",lastAttempt())
+        .put("lastAttemptState",lastAttemptState())
         .put("lastError",safe(error())).toString(2);
     }catch(Exception ex){return "{}";}
   }
@@ -422,21 +426,51 @@ final class LocalDiscovery {
         broad.add(b);
       }
       broad.sort((a,b)->Double.compare(b.rank,a.rank));
-      // Verify only leading technical candidates with actual 60 completed sessions & Groww trade time.
-      int toVerify=Math.min(55,broad.size());int checked=0,valid=0;
+      // Every eligible NSE stock goes through the broad-data scan BEFORE ranking.
+      // Every broad-qualified candidate gets detailed historical verification;
+      // there is NO arbitrary 55/50-stock selection cap.
+      JSONArray preliminary=new JSONArray();
+      for(int i=0;i<Math.min(3,broad.size());i++){
+        Broad b=broad.get(i);
+        preliminary.put(new JSONObject().put("symbol",b.symbol)
+          .put("price",b.price).put("fromOpenPct",b.move)
+          .put("preliminaryRank",b.rank)
+          .put("status","PRELIMINARY · NOT VERIFIED")
+          .put("reason","Groww last-traded snapshot only; 20-session EOD resistance and Alpha-30 not verified")
+          .put("tradeMs",0).put("signal","NO SIGNAL"));
+      }
+      prefs.edit().putString("preliminary",new JSONObject()
+        .put("atMs",System.currentTimeMillis()).put("eligibleUniverse",universe.size())
+        .put("quotesLoaded",prices.size()).put("broadCandidates",broad.size())
+        .put("stage","Historical verification in progress")
+        .put("top",preliminary).toString()).apply();
+      int toVerify=broad.size();int checked=0,valid=0;
+      JSONObject rejectionReasons=new JSONObject();
+      recordProgress("Verifying all broad-qualified NSE stocks",0,toVerify,0,rejectionReasons);
       List<JSONObject> candidates=new ArrayList<>();
       for(int i=0;i<toVerify;i++){
         Broad b=broad.get(i);checked++;
-        progress.update("Verifying breakout history "+checked+" / "+toVerify);
+        if(checked==1||checked%10==0||checked==toVerify){
+          progress.update("Verifying NSE daily history "+checked+" / "+toVerify+
+            " · "+valid+" validated");
+          recordProgress("Historical review",checked,toVerify,valid,rejectionReasons);
+        }
         try{
           JSONObject item;
           if(afterHours){
-            GrowwReadOnlyClient.NextSessionHistory h=groww.nextSessionHistory(b.symbol);
-            if(h.avgValue20<10_000_000||h.priorHigh20<=0||h.previousClose<=0)continue;
+            GrowwReadOnlyClient.NextSessionHistory h=historyCached(groww,b.symbol);
+            if(h.avgValue20<10_000_000||h.priorHigh20<=0||h.previousClose<=0){
+              countFailure(rejectionReasons,"LIQUIDITY_OR_HISTORY");continue;
+            }
             double distance=100*(h.close/h.priorHigh20-1);
             double daily=100*(h.close/h.previousClose-1);
             double location=clamp((h.close-h.low)/Math.max(.01,h.high-h.low),0,1);
-            if(distance< -2.5||distance>4.0||daily<0.25||daily>8.0||location<.55)continue;
+            if(distance< -2.5||distance>4.0){
+              countFailure(rejectionReasons,"OUTSIDE_BREAKOUT_RANGE");continue;
+            }
+            if(daily<0.25||daily>8.0||location<.55){
+              countFailure(rejectionReasons,"MOMENTUM_OR_CLOSE_STRENGTH");continue;
+            }
             double strength=40*clamp(daily/5.,0,1)+30*location+
               30*clamp(1-Math.abs(distance)/4.,0,1);
             item=new JSONObject().put("symbol",b.symbol).put("price",h.close)
@@ -455,16 +489,26 @@ final class LocalDiscovery {
               .put("why","Prior session technical shortlist; complete Alpha-30 and live entry gates pending");
           }else{
             GrowwReadOnlyClient.History h=groww.history60(b.symbol);
-            if(h.averageValue20<10_000_000 || h.high20<=0)continue;
+            if(h.averageValue20<10_000_000 || h.high20<=0){
+              countFailure(rejectionReasons,"LIQUIDITY_OR_HISTORY");continue;
+            }
             GrowwReadOnlyClient.Market q=groww.quote(b.symbol);
             long observed=System.currentTimeMillis();
             if(q.lastTradeMs<=0||q.lastTradeMs>observed+3000||
-                observed-q.lastTradeMs>60_000L)continue;
-            if(!Double.isFinite(q.price)||q.price<=0)continue;
+                observed-q.lastTradeMs>60_000L){
+              countFailure(rejectionReasons,"STALE_INTRADAY_QUOTE");continue;
+            }
+            if(!Double.isFinite(q.price)||q.price<=0){
+              countFailure(rejectionReasons,"INVALID_PRICE");continue;
+            }
             double distance=100*(q.price/h.high20-1);
-            if(distance< -2.5||distance>4.0)continue;
+            if(distance< -2.5||distance>4.0){
+              countFailure(rejectionReasons,"OUTSIDE_BREAKOUT_RANGE");continue;
+            }
             double daily=100*(q.price/h.previousClose-1);
-            if(daily>8.0||daily<0.25)continue;
+            if(daily>8.0||daily<0.25){
+              countFailure(rejectionReasons,"MOMENTUM_OR_CLOSE_STRENGTH");continue;
+            }
             double nearBonus=30*clamp(1-Math.abs(distance)/4.,0,1);
             double strength=40*clamp(daily/5.,0,1)+30*b.location+nearBonus;
             String stage=distance>=0?"BREAKOUT WATCH":distance>=-1.5?"NEAR BREAKOUT":"WATCHING";
@@ -482,10 +526,14 @@ final class LocalDiscovery {
               .put("why","30-factor fundamentals, catalysts, macro and execution gates not verified");
           }
           candidates.add(item);valid++;
-        }catch(SecurityException auth){throw auth;}
-         catch(Exception invalid){ /* intentionally not promoted to a validated candidate */ }
+        }catch(SecurityException auth){
+          countFailure(rejectionReasons,"AUTH_REJECTED");throw auth;
+        }catch(Exception invalid){
+          countFailure(rejectionReasons,classify(invalid));
+        }
         Thread.sleep(300);
       }
+      recordProgress("Complete",checked,toVerify,valid,rejectionReasons);
       if(afterHours && !candidates.isEmpty()){
         // Never mix stale previous-session records with candidates from a newer
         // completed NSE trading session. All displayed EOD watches share a date.
@@ -512,7 +560,13 @@ final class LocalDiscovery {
          .put("quotedCount",prices.size()).put("batchesSucceeded",successfulBatches)
          .put("batchesFailed",failedBatches).put("broadCandidates",broad.size())
          .put("dailyHistoryVerified",checked).put("eligibleForResearch",valid)
-         .put("scanCompleteness","Partial: individual histories verified only for leading "+checked)
+         .put("universeCoverage",universeDiagnostics)
+         .put("verificationRejectReasons",rejectionReasons)
+         .put("verificationAttempted",checked)
+         .put("historicalVerificationCap",0)
+         .put("scanCompleteness",failedBatches==0?
+           "All "+checked+" broad-qualified NSE symbols attempted for historical verification":
+           "All broad candidates attempted; "+failedBatches+" price batches failed")
          .put("reason",afterHours?
             "Next-session shortlist from completed daily evidence; not a live BUY":
             "Technical discovery ranking, NOT Alpha-30 BUY")
