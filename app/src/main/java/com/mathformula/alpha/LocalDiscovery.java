@@ -556,6 +556,10 @@ final class LocalDiscovery {
       }
       candidates.sort((a,b)->Double.compare(
         b.optDouble("preliminaryRank",0),a.optDouble("preliminaryRank",0)));
+      // Keep all historically validated research records, not merely the first three,
+      // so the PDF overnight factor scorer can rank the complete verified pool.
+      JSONArray verifiedPool=new JSONArray();
+      for(JSONObject verified:candidates)verifiedPool.put(verified);
       JSONArray top=new JSONArray();
       for(int i=0;i<Math.min(3,candidates.size());i++)top.put(candidates.get(i));
       long now=System.currentTimeMillis();
@@ -581,6 +585,7 @@ final class LocalDiscovery {
          .put("priceStatus",afterHours?"LAST_COMPLETED_SESSION_NOT_LIVE":"INTRADAY_OBSERVED")
          .put("sourceSessionDate",afterHours&&top.length()>0?
            top.optJSONObject(0).optString("priceAsOfSession",""):"")
+         .put("verifiedTechnicalPool",verifiedPool)
          .put("top",top);
       save(result);
       return result;
