@@ -79,9 +79,12 @@ final class Alpha30EvidenceStore extends SQLiteOpenHelper {
         factors[index]=value;n++;
       }
     }
-    for(int i=0;i<29;i++)if(!Double.isFinite(factors[i]))
-      missing.put(new JSONObject().put("factor",i+1).put("name",Alpha30Engine.FACTORS[i])
-        .put("weight",Alpha30Engine.WEIGHTS[i]));
+    for(int i=0;i<29;i++)if(!Double.isFinite(factors[i])){
+      try{missing.put(new JSONObject().put("factor",i+1)
+        .put("name",Alpha30Engine.FACTORS[i])
+        .put("weight",Alpha30Engine.WEIGHTS[i]));}
+      catch(org.json.JSONException invalid){throw new IllegalStateException("Factor audit serialization failed",invalid);}
+    }
     return new EvidenceScore(Alpha30Engine.score(factors,true),n,missing);
   }
   static final class ImportResult {
