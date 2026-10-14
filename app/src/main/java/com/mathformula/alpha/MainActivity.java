@@ -64,8 +64,8 @@ public final class MainActivity extends Activity {
   private final List<String> errors=new ArrayList<>();
   private final Runnable fiveMinute=new Runnable(){
     @Override public void run(){
-      if("SERVER".equals(activeTab))fetchServer();
-      else if(vault.configured() && !watchStore.enabled())fetch(); else render();
+      // Do not initiate a costly legacy-watchlist quote scan from Settings.
+      render();
       long now=System.currentTimeMillis();
       handler.postDelayed(this,60000L-(now%60000L)+3000L);
     }
@@ -98,10 +98,7 @@ public final class MainActivity extends Activity {
     super.onCreate(b);
     vault=new SecureGrowwStore(this);client=new GrowwReadOnlyClient(vault);
     watchStore=new WatchStore(this);
-    if(!serverUrl().isEmpty()){
-      activeTab="SERVER";
-      serverError="Checking independent scanner status";
-    }
+    // Keep advanced data-collection panels out of the new Settings UI.
     if(vault.configured())status="Groww credentials saved securely. Refresh to retrieve prices.";
     getWindow().setStatusBarColor(Color.rgb(248,250,252));
     getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
@@ -174,96 +171,80 @@ public final class MainActivity extends Activity {
     }
     return result;
   }
+  /** Settings is a focused, non-trading configuration screen. */
   private void render(){
     page.removeAllViews();
-    page.addView(text("MathFormula",30,INK,true));
-    page.addView(text("GROWW LIVE · ALPHA-30 RESEARCH",11,BLUE,true));gap(page,16);
-    LinearLayout top=card();
-    top.addView(text(vault.configured()?"Groww TOTP configured":"Connect your Groww account",17,INK,true));
-    gap(top,7);top.addView(text(status,12,vault.configured()?MUTED:AMBER,false));gap(top,5);
-    top.addView(text("READ ONLY · no orders · no static trading IP",12,GREEN,true));
-    gap(top,5);top.addView(text("Alpha-30 v1.0 fixed weights · 90% accuracy not proven",11,MUTED,false));
-    addButtonRow(loading?"Fetching…":"Refresh Groww",this::fetch,"Groww Settings",this::settings);
-    addButtonRow(watchStore.enabled()?"Renew close coverage":"Start background",this::startMonitoring,
-      "Stop background",this::stopMonitoring);
-    addButtonRow("Edit Watchlist",this::editWatchlist,"Earnings dates",this::editEvents);
-    addButtonRow("NSE Scanner",()->selectTab("SERVER"),"Server Settings",this::editServer);
-    addButtonRow("Live",()->selectTab("LIVE"),"Pre-close",()->selectTab("PRE_CLOSE"));
-    addButtonRow("Runners & misses",()->selectTab("RUNNERS"),"Audit history",this::showAudit);
-    page.addView(btn("Export Logs (ZIP) · share for review",this::exportLogs),
-      new LinearLayout.LayoutParams(-1,dp(48)));
-    gap(page,10);
-    page.addView(btn("View fixed 30 Model Factors",this::showFactors),new LinearLayout.LayoutParams(-1,dp(44)));
-    gap(page,10);
-    LinearLayout monitor=card();
-    long sincePoll=System.currentTimeMillis()-watchStore.lastPoll();
-    boolean healthy=watchStore.enabled()&&watchStore.lastPoll()>0&&sincePoll<420000L;
-    monitor.addView(text("Background status: "+(!watchStore.enabled()?"STOPPED":!healthy?"COVERAGE GAP":watchStore.lastPollOk()?"MONITORING":"DATA ERROR"),14,INK,true));gap(monitor,5);
-    monitor.addView(text("Last scan: "+clock(watchStore.lastPoll())+(watchStore.lastPoll()>0?" · "+(sincePoll/1000)+"s ago":" · not scanned"),12,MUTED,false));
-    if(!watchStore.lastPollOk()&&!watchStore.lastError().isEmpty()){
-      gap(monitor,5);monitor.addView(text("Last issue: "+watchStore.lastError(),12,AMBER,false));
+    TextView title=text("Settings",28,INK,true);
+    page.addView(title);
+    gap(page,5);
+    page.addView(text("MATHFORMULA v2.0  ·  RESEARCH ONLY",11,BLUE,true));
+    gap(page,18);
+    LinearLayout account=card();
+    account.addView(text("Connections",19,INK,true));
+    gap(account,7);
+    account.addView(text("Groww market data",14,INK,true));
+    account.addView(text(vault.configured()?"Encrypted credentials configured":
+      "Not connected · credentials required for NSE discovery",
+      12,vault.configured()?GREEN:AMBER,false));
+    gap(account,10);
+    account.addView(btn(vault.configured()?"Manage Groww credentials":"Connect Groww securely",
+      this::settings),new LinearLayout.LayoutParams(-1,dp(46)));
+    gap(account,15);
+    account.addView(text("Independent NSE scanner",14,INK,true));
+    account.addView(text(serverUrl().isEmpty()?"Not configured · server-side scanning unavailable":
+      "HTTPS endpoint configured · verify deployment and data coverage",
+      12,serverUrl().isEmpty()?AMBER:MUTED,false));
+    gap(account,10);
+    account.addView(btn("Configure server connection",this::editServer),
+      new LinearLayout.LayoutParams(-1,dp(46)));
+    gap(page,2);
+    LinearLayout alerts=card();
+    alerts.addView(text("Monitoring & notifications",19,INK,true));
+    gap(alerts,8);
+    alerts.addView(text(ResearchAlerts.permission(this)?"Android notifications enabled":
+      "Android notifications disabled",13,INK,true));
+    gap(alerts,5);
+    alerts.addView(text("Phone alerts are best effort; push messages while the app is closed require a deployed server and push channel. No unverified BUY alerts.",12,MUTED,false));
+    gap(alerts,10);
+    alerts.addView(text("Last alert review: "+clock(ResearchAlerts.lastCheck(this)),11,MUTED,false));
+    gap(alerts,10);
+    alerts.addView(text(watchStore.enabled()?
+      "On-device monitoring: running on best effort":"On-device monitoring: stopped",12,INK,false));
+    gap(alerts,9);
+    alerts.addView(btn(watchStore.enabled()?"Restart phone monitoring":"Start phone monitoring",
+      this::startMonitoring),new LinearLayout.LayoutParams(-1,dp(46)));
+    if(watchStore.enabled()){
+      gap(alerts,7);
+      alerts.addView(btn("Stop phone monitoring",this::stopMonitoring),
+        new LinearLayout.LayoutParams(-1,dp(42)));
     }
-    gap(monitor,5);
-    monitor.addView(text("Phone monitoring is best effort. For final-hour coverage, reopen MathFormula around 2:30 PM and tap Renew close coverage; Android can still interrupt the service.",12,AMBER,false));
-    if(MarketSchedule.weekdayTradingTime(System.currentTimeMillis())){
-      long until=MarketSchedule.minutesUntilClose(System.currentTimeMillis());
-      monitor.addView(text("NSE closes in approximately "+until+" minutes · last-hour opportunity checks at 14:45, 15:00, 15:15, 15:25 IST.",11,MUTED,false));
-    }
-    if("SERVER".equals(activeTab)){
-      renderServer();
-    }else if("PRE_CLOSE".equals(activeTab)){
-      page.addView(text("PRE-CLOSE OPPORTUNITIES",15,BLUE,true));gap(page,7);
-      page.addView(text("Only your monitored symbols. These are event and technical WATCH candidates, not next-day predictions or BUY signals.",12,MUTED,false));gap(page,8);
-      LinearLayout summary=card();
-      summary.addView(text("Latest pre-close checkpoint",14,INK,true));gap(summary,5);
-      summary.addView(text(clock(watchStore.lastPreClose()),12,MUTED,false));
-      summary.addView(text(watchStore.precloseSummary(),12,MUTED,false));
-      for(String symbol:symbols()){
-        JSONObject snap=watchStore.get(symbol);
-        String stage=snap.optString("stage","WAITING");
-        String event=watchStore.earningsDate(symbol);
-        if(stage.equals("NEAR BREAKOUT")||stage.equals("BREAKOUT CROSSED")||
-           stage.equals("CONFIRMING")||stage.equals("FULL MODEL PENDING")||
-           MarketSchedule.dueSoon(event,System.currentTimeMillis())){
-          drawSaved(symbol,snap);
-          if(MarketSchedule.dueSoon(event,System.currentTimeMillis())){
-            LinearLayout tag=card();
-            tag.addView(text(symbol+" · Earnings date "+event,13,AMBER,true));
-            tag.addView(text("MANUALLY ENTERED · not a verified NSE disclosure · gap-down risk",12,MUTED,false));
-          }
-        }
-      }
-      LinearLayout gapCard=card();
-      gapCard.addView(text("Missing: market-wide discovery and published results",14,INK,true));
-      gapCard.addView(text("For a TARIL-style event we need a server-side NSE-wide screen and a timestamped filings feed. This phone-only tab cannot anticipate unpublished results.",12,AMBER,false));
-    }else if("RUNNERS".equals(activeTab)){
-      renderRunners();
-    }else {
-      page.addView(text("NSE LIVE WATCHLIST",12,BLUE,true));gap(page,5);
-      page.addView(text("Watching → Near breakout → Crossed → Confirming → Full-model pending. A breakout is not a BUY.",12,MUTED,false));gap(page,10);
-      // All chosen candidates remain visible even after a failed breakout.
-      for(String symbol:symbols()){
-        JSONObject snapshot=watchStore.get(symbol);
-        if(snapshot.has("price"))drawSaved(symbol,snapshot);
-        else{
-          LinearLayout c=card();
-          c.addView(text(symbol+" · WAITING FOR DATA",16,INK,true));
-          c.addView(text("Expected breakout: prior 20 completed session highs · awaiting Groww feed",12,MUTED,false));
-          c.addView(text("NO SIGNAL",11,AMBER,true));
-        }
-      }
-    }
-    for(String error:errors){
-      LinearLayout c=card();c.addView(text(error,12,RED,false));
-    }
-    LinearLayout help=card();
-    help.addView(text("Why not automatically BUY?",16,INK,true));gap(help,9);
-    help.addView(text("Groww provides price, volume, quotes and candles. It does not by itself supply all 30 required financial, catalyst and macro inputs, nor a validated target and net risk/reward. Missing evidence forces NO SIGNAL.",12,MUTED,false));
-    gap(help,10);
-    help.addView(text("Enable the visible background-monitoring notification to continue checks while the app is closed. Android may stop the session; the UI reports coverage gaps. Full-universe 24/7 monitoring requires a server.",12,AMBER,true));
-    gap(page,4);
-    page.addView(text("Credentials encrypted with Android Keystore. No access tokens or TOTP codes are logged, exported, or committed. Only authorized read-only endpoints are called.",11,MUTED,false));
+    gap(page,2);
+    LinearLayout preferences=card();
+    preferences.addView(text("Research preferences",19,INK,true));gap(preferences,7);
+    preferences.addView(text("The frozen Alpha-30 model is not editable from this screen.",12,MUTED,false));
+    gap(preferences,10);
+    preferences.addView(btn("View all 30 model factors",this::showFactors),
+      new LinearLayout.LayoutParams(-1,dp(46)));
+    gap(page,2);
+    LinearLayout privacy=card();
+    privacy.addView(text("Privacy & diagnostics",19,INK,true));gap(privacy,8);
+    privacy.addView(text("Credentials are encrypted in Android Keystore. Quotes and research events are stored locally. MathFormula is read-only and never places orders.",12,MUTED,false));
+    gap(privacy,10);
+    privacy.addView(btn("Export sanitized diagnostics",this::exportLogs),
+      new LinearLayout.LayoutParams(-1,dp(46)));
+    gap(privacy,7);
+    privacy.addView(btn("View local audit",this::showAudit),
+      new LinearLayout.LayoutParams(-1,dp(42)));
+    gap(page,5);
+    page.addView(text("Data health: "+(vault.configured()?"Groww configured":"Feed not connected")+
+      " · Scanner "+(serverUrl().isEmpty()?"not deployed":"endpoint set"),11,MUTED,false));
+    gap(page,6);
+    page.addView(text("Research watches are not investment advice or verified BUY recommendations. Market data can be stale, delayed, or unavailable.",11,AMBER,false));
+    gap(page,13);
+    page.addView(btn("← Back to recommendations",this::finish),
+      new LinearLayout.LayoutParams(-1,dp(44)));
   }
+
   private void drawSaved(String symbol,JSONObject j){
     LinearLayout c=card();
     long exchangeMs=j.optLong("tradeMs",0),polled=j.optLong("polledAt",0);
