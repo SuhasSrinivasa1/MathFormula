@@ -478,10 +478,19 @@ public final class HomeActivity extends Activity {
     spaceIn(c,8);
     c.addView(text("Breakout reference  "+money(j.optDouble("breakoutLevel",Double.NaN)),13,BLUE,true));
     c.addView(text("Distance vs resistance  "+percent(j.optDouble("distancePct",Double.NaN)),12,MUTED,false));
+    if("NEXT_SESSION_RESEARCH".equals(j.optString("scanMode",""))){
+      spaceIn(c,5);
+      c.addView(text("Tomorrow's research watch · BUY confirmation pending next market session",
+        11,BLUE,true));
+    }
     spaceIn(c,11);
     long trade=j.optLong("tradeMs",0),now=System.currentTimeMillis();
     boolean quoteFresh=!closed&&open()&&trade>0&&now>=trade&&now-trade<=60000L;
-    c.addView(text((closed?"Last recorded quote · ":"Exchange observation · ")+time(trade),
+    boolean nextSession="NEXT_SESSION_RESEARCH".equals(j.optString("scanMode",""));
+    c.addView(text(nextSession?
+      "Latest completed NSE session: "+j.optString("priceAsOfSession","Unavailable")+
+        " · LAST SESSION CLOSE (not live)":
+      (closed?"Last recorded quote · ":"Exchange observation · ")+time(trade),
       11,quoteFresh?GREEN:MUTED,false));
     spaceIn(c,7);
     JSONArray why=j.optJSONArray("reasons");
