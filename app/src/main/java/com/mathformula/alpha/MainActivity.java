@@ -276,7 +276,10 @@ public final class MainActivity extends Activity {
     page.removeAllViews();
     page.addView(text("Settings",28,INK,true));
     gap(page,4);
-    page.addView(text("MATHFORMULA v2.2  ·  ALPHA-30 RESEARCH",11,BLUE,true));
+    String version="2.7.0";
+    try{version=getPackageManager().getPackageInfo(getPackageName(),0).versionName;}
+    catch(Exception ignored){}
+    page.addView(text("MATHFORMULA v"+version+"  ·  ALPHA-30 RESEARCH",11,BLUE,true));
     gap(page,17);
     LinearLayout connection=card();
     connection.addView(text("Groww connection",19,INK,true));
