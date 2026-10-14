@@ -188,9 +188,9 @@ final class LocalDiscovery {
         for(int i=updated.length()-35;i<updated.length();i++)limited.put(updated.optJSONObject(i));
         updated=limited;
       }
-      prefs.edit()
-        .remove("preliminary")
-        .putLong("lastAttempt",System.currentTimeMillis())
+      android.content.SharedPreferences.Editor update=prefs.edit();
+      if(result.optInt("eligibleForResearch",0)>=3)update.remove("preliminary");
+      update.putLong("lastAttempt",System.currentTimeMillis())
         .putString("lastAttemptState","Completed · "+result.optInt("universeCount",0)+
             " NSE symbols · "+result.optInt("quotedCount",0)+" prices · "+
             result.optInt("eligibleForResearch",0)+" qualified research candidates")
