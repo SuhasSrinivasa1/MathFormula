@@ -26,12 +26,13 @@ final class GrowwReadOnlyClient {
   private static final String ROOT="https://api.groww.in";
   private static final ZoneId IST=ZoneId.of("Asia/Kolkata");
   private final SecureGrowwStore secrets;
+  private final android.content.Context quotaContext;
   private long lastAuthAttempt=0;
   private long sessionObtainedAt=0;
   private final java.util.Map<String,String> dailyCacheDate=new java.util.HashMap<>();
   private final java.util.Map<String,Double> dailyCacheHigh=new java.util.HashMap<>();
   private final java.util.Map<String,String> dailyCacheAsOf=new java.util.HashMap<>();
-  GrowwReadOnlyClient(SecureGrowwStore secrets){this.secrets=secrets;}
+  GrowwReadOnlyClient(SecureGrowwStore secrets){this.secrets=secrets;this.quotaContext=secrets.context();}
   static final class Market {
     String symbol; double price=Double.NaN,change=Double.NaN,vwap=Double.NaN,bid=Double.NaN,ask=Double.NaN;
     double high=Double.NaN,low=Double.NaN,dayVolume=Double.NaN,spreadBps=Double.NaN;
@@ -45,6 +46,7 @@ final class GrowwReadOnlyClient {
     if(!path.startsWith("/v1/live-data/quote?") && !path.startsWith("/v1/historical/candles?")
        && !path.startsWith("/v1/live-data/ohlc?") && !path.startsWith("/v1/live-data/ltp?")
        && !path.equals("/v1/token/api/access"))throw new SecurityException("Read-only API allowlist");
+    GrowwQuota.acquire(path,quotaContext);
     HttpURLConnection c=(HttpURLConnection)new URL(ROOT+path).openConnection();
     try{
       c.setRequestMethod(method);c.setConnectTimeout(7000);c.setReadTimeout(9000);
@@ -58,7 +60,7 @@ final class GrowwReadOnlyClient {
       }
       int status=c.getResponseCode();
       if(status==401||status==403)throw new SecurityException("Groww authorization rejected (HTTP "+status+")");
-      if(status==429)throw new IllegalStateException("Groww rate limit reached (HTTP 429)");
+      if(status==429){GrowwQuota.backoff();throw new IllegalStateException("Groww rate limit reached (HTTP 429); cooldown enabled");}
       if(status<200||status>=300)throw new IllegalStateException("Groww HTTP "+status);
       StringBuilder sb=new StringBuilder();
       try(InputStream stream=c.getInputStream();BufferedReader reader=new BufferedReader(new InputStreamReader(stream,StandardCharsets.UTF_8))){

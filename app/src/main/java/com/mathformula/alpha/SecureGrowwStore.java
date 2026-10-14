@@ -16,7 +16,10 @@ final class SecureGrowwStore {
   private static final String KEY_ALIAS = "mathformula_groww_aes_v2";
   private final android.content.SharedPreferences pref;
   private final KeyStore store;
+  private final Context appContext;
+  Context context(){return appContext;}
   SecureGrowwStore(Context c) {
+    appContext=c.getApplicationContext();
     pref = c.getSharedPreferences("groww_secrets_encrypted_v2", Context.MODE_PRIVATE);
     try { store=KeyStore.getInstance("AndroidKeyStore");store.load(null); }
     catch(Exception ex){throw new IllegalStateException("Android Keystore unavailable",ex);}

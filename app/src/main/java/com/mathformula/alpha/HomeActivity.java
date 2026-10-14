@@ -255,15 +255,16 @@ public final class HomeActivity extends Activity {
     spaceIn(c,7);
     boolean alertsOn=ResearchAlerts.permission(this);
     c.addView(text(alertsOn?
-      "Research alerts enabled · Android schedules checks approximately every 15 minutes":
+      "Research alerts enabled · Android background checks are best-effort (~15 min)":
       "Notifications disabled · enable permission in Android app settings",
       12,alertsOn?GREEN:AMBER,false));
     long alertChecked=ResearchAlerts.lastCheck(this);
     c.addView(text("Last alert check: "+time(alertChecked)+
       " · "+ResearchAlerts.lastState(this),11,MUTED,false));
     spaceIn(c,6);
-    c.addView(text("Groww budget: app caps 150 live calls/min vs Groww 300/min. "+
-      "Quota includes any other apps using the same account.",11,MUTED,false));
+    c.addView(text("Groww usage: "+GrowwQuota.status()+". "+
+      "Shared app cap 6/sec and 210/min (Groww publishes 10/sec and 300/min). "+
+      "Other apps on your Groww account are not included.",11,MUTED,false));
     }
     if(!closed&&!discovery.error().isEmpty()){
       spaceIn(c,6);

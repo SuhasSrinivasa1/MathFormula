@@ -1,68 +1,81 @@
 package com.mathformula.alpha;
 
 import android.os.SystemClock;
+import android.content.Context;
+import android.content.SharedPreferences;
 import java.util.ArrayDeque;
-import java.util.Deque;
 
 /**
- * Best-effort DEVICE-LOCAL safety budgets below official Groww ceilings.
- * All instances in the MathFormula Android process share these counters.
- * Groww account quotas are shared with other apps, and that external usage is unknowable.
+ * Shared in-process Groww API request governor. Applies to HomeActivity, JobScheduler,
+ * ScannerService and discovery; all use GrowwReadOnlyClient.call().
  *
- * Official limits (Oct 2026): Live Data 10/s & 300/min, Auth 5/s & 30/min,
- * token exchanges 150/day. Historical API quotas aren't listed alongside Live Data:
- * therefore a separate conservative throttle protects historical requests.
+ * Groww published REST group limit: LIVE DATA 10/second and 300/minute.
+ * Conservative internal budget: 6/sec, 210/min.
+ * Historical requests have separate entitlement/limits; also paced conservatively.
+ * Account-wide usage by other apps/processes is NOT observable here.
  */
 final class GrowwQuota {
-  private static final Deque<Long> LIVE=new ArrayDeque<>();
-  private static final Deque<Long> HISTORICAL=new ArrayDeque<>();
-  private static final Deque<Long> AUTH=new ArrayDeque<>();
-  private static long liveBlockUntil=0,historyBlockUntil=0,authBlockUntil=0;
-  private static long acceptedLive=0,acceptedHistorical=0,acceptedAuth=0;
+  private static final int LIVE_SECOND=6, LIVE_MINUTE=210, AUTH_DAY=90;
+  private static final Object LOCK=new Object();
+  private static final ArrayDeque<Long> liveSecond=new ArrayDeque<>();
+  private static final ArrayDeque<Long> liveMinute=new ArrayDeque<>();
+  private static final ArrayDeque<Long> historicalMinute=new ArrayDeque<>();
+  private static long blockedUntil=0;
+  private static long lastHistorical=0;
   private GrowwQuota(){}
-  static synchronized void acquire(String category) throws InterruptedException {
-    Deque<Long> events;
-    long interval,window=60_000L, block;
-    int ceiling;
-    switch(category) {
-      case "live":events=LIVE;interval=400;ceiling=150;break;
-      case "historical":events=HISTORICAL;interval=1500;ceiling=30;break;
-      case "auth":events=AUTH;interval=120_000;ceiling=8;window=24L*60*60*1000;break;
-      default:throw new IllegalArgumentException("Unknown market-data rate category");
-    }
-    while(true){
-      long now=SystemClock.elapsedRealtime();
-      block="live".equals(category)?liveBlockUntil:
-        "historical".equals(category)?historyBlockUntil:authBlockUntil;
-      while(!events.isEmpty() && now-events.peekFirst()>=window)events.removeFirst();
-      long earliest=events.isEmpty()?0:events.peekLast()+interval;
-      long windowReset=events.size()>=ceiling?events.peekFirst()+window:0;
-      long target=Math.max(Math.max(block,earliest),windowReset);
-      if(now>=target){
-        events.addLast(now);
-        if("live".equals(category))acceptedLive++;
-        else if("historical".equals(category))acceptedHistorical++;
-        else acceptedAuth++;
-        return;
+  static void acquire(String path,Context context) throws InterruptedException {
+    final boolean auth=path.equals("/v1/token/api/access");
+    final boolean live=path.startsWith("/v1/live-data/");
+    if(auth){
+      SharedPreferences p=context.getSharedPreferences("groww_quota_v19",Context.MODE_PRIVATE);
+      String day=java.time.LocalDate.now(MarketSchedule.IST).toString();
+      synchronized(LOCK){
+        int count=day.equals(p.getString("date",""))?p.getInt("auth",0):0;
+        if(count>=AUTH_DAY)throw new IllegalStateException("Internal Groww auth daily budget reached");
+        p.edit().putString("date",day).putInt("auth",count+1).commit();
       }
-      long delay=Math.min(30_000L,Math.max(1L,target-now));
-      GrowwQuota.class.wait(delay);
+      return;
+    }
+    if(!live && !path.startsWith("/v1/historical/"))
+      throw new SecurityException("Groww API request type is not permitted");
+    while(true){
+      if(Thread.currentThread().isInterrupted())throw new InterruptedException("Groww request cancelled");
+      long sleep;
+      synchronized(LOCK){
+        long now=SystemClock.elapsedRealtime();
+        long hold=Math.max(0,blockedUntil-now);
+        if(live){
+          while(!liveSecond.isEmpty()&&now-liveSecond.peekFirst()>=1000)liveSecond.removeFirst();
+          while(!liveMinute.isEmpty()&&now-liveMinute.peekFirst()>=60000)liveMinute.removeFirst();
+          if(hold==0&&liveSecond.size()<LIVE_SECOND&&liveMinute.size()<LIVE_MINUTE){
+            liveSecond.addLast(now);liveMinute.addLast(now);return;
+          }
+          long secondWait=liveSecond.size()>=LIVE_SECOND?1001-(now-liveSecond.peekFirst()):0;
+          long minuteWait=liveMinute.size()>=LIVE_MINUTE?60001-(now-liveMinute.peekFirst()):0;
+          sleep=Math.max(hold,Math.max(secondWait,minuteWait));
+        }else{
+          while(!historicalMinute.isEmpty()&&now-historicalMinute.peekFirst()>=60000)
+            historicalMinute.removeFirst();
+          if(hold==0&&historicalMinute.size()<45&&now-lastHistorical>=250){
+            historicalMinute.addLast(now);lastHistorical=now;return;
+          }
+          sleep=Math.max(hold,Math.max(historicalMinute.size()>=45?
+            60001-(now-historicalMinute.peekFirst()):0,250-(now-lastHistorical)));
+        }
+      }
+      Thread.sleep(Math.min(Math.max(50,sleep),2000));
     }
   }
-  static synchronized void rateLimited(String category){
-    long next=SystemClock.elapsedRealtime()+120_000L;
-    if("live".equals(category))liveBlockUntil=Math.max(liveBlockUntil,next);
-    else if("historical".equals(category))historyBlockUntil=Math.max(historyBlockUntil,next);
-    else authBlockUntil=Math.max(authBlockUntil,next);
-    GrowwQuota.class.notifyAll();
+  static void backoff(){
+    synchronized(LOCK){
+      blockedUntil=Math.max(blockedUntil,SystemClock.elapsedRealtime()+75000);
+    }
   }
-  static synchronized String counters(){
-    return "liveCalls="+acceptedLive+" historicalCalls="+acceptedHistorical+
-      " authCalls="+acceptedAuth+" (since app process started)";
-  }
-  static String policy(){
-    return "Device guardrails: <=150 live/min and >=400ms/live call; "+
-      "<=30 historical/min and >=1500ms/historical call; "+
-      "<=8 token exchanges/24h. Groww account-wide quota includes other apps.";
+  static String status(){
+    synchronized(LOCK){
+      long now=SystemClock.elapsedRealtime();
+      while(!liveMinute.isEmpty()&&now-liveMinute.peekFirst()>=60000)liveMinute.removeFirst();
+      return liveMinute.size()+"/"+LIVE_MINUTE+" internal live-data requests in rolling minute";
+    }
   }
 }
