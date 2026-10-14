@@ -103,7 +103,9 @@ final class LocalDiscovery {
         timeline=trimmed;
       }
       long started=result.optLong("scanStartedMs",result.optLong("scannedAtMs",0));
-      String day=istDate(started);
+      String sourceSession=result.optString("sourceSessionDate","");
+      String day="NEXT_SESSION_RESEARCH".equals(result.optString("scanMode"))&&
+        sourceSession.matches("\\d{4}-\\d{2}-\\d{2}")?sourceSession:istDate(started);
       JSONObject snapshot=new JSONObject(result.toString());
       snapshot.put("sessionDate",day);
       snapshot.put("snapshotKind","LAST_OBSERVED_SESSION_SCAN_NOT_EXCHANGE_CLOSE");
@@ -409,6 +411,8 @@ final class LocalDiscovery {
             "Technical discovery ranking, NOT Alpha-30 BUY")
          .put("scanMode",afterHours?"NEXT_SESSION_RESEARCH":"INTRADAY_RESEARCH")
          .put("priceStatus",afterHours?"LAST_COMPLETED_SESSION_NOT_LIVE":"INTRADAY_OBSERVED")
+         .put("sourceSessionDate",afterHours&&top.length()>0?
+           top.optJSONObject(0).optString("priceAsOfSession",""):"")
          .put("top",top);
       save(result);
       return result;
