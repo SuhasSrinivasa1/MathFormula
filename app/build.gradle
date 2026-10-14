@@ -1,13 +1,35 @@
 plugins { id 'com.android.application' }
+
+def stableKeystore = System.getenv('MATHFORMULA_RELEASE_KEYSTORE')
+def stablePassword = System.getenv('MATHFORMULA_RELEASE_PASSWORD')
 android {
     namespace 'com.mathformula.alpha'
     compileSdk 35
     defaultConfig {
-        applicationId 'com.mathformula.alpha.v23'
+        // Freeze this applicationId for all future v2.4+ upgrades.
+        applicationId 'com.mathformula.alpha.stable'
         minSdk 26
         targetSdk 35
-        versionCode 23
-        versionName '2.3.0-rc1'
+        versionCode 240
+        versionName '2.4.0'
+    }
+    signingConfigs {
+        stableRelease {
+            if (stableKeystore && stablePassword) {
+                storeFile file(stableKeystore)
+                storePassword stablePassword
+                keyAlias 'mathformula'
+                keyPassword stablePassword
+                storeType 'pkcs12'
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (stableKeystore && stablePassword) signingConfig signingConfigs.stableRelease
+            minifyEnabled false
+            shrinkResources false
+        }
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
