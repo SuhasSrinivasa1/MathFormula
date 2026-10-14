@@ -14,7 +14,7 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Best-effort, foreground, READ-ONLY NSE discovery using the phone's existing Groww TOTP session.
+ * Best-effort, foreground, READ-ONLY NSE stock research discovery using the phone's existing Groww TOTP session.
  * Discovery rank is NOT frozen Alpha-30 factor score and NEVER produces a BUY signal.
  * Every universe count / validated candidate is real; failed batches remain failures.
  */
