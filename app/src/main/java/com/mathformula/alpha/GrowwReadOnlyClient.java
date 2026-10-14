@@ -157,6 +157,63 @@ final class GrowwReadOnlyClient {
     // Average value is a CLOSE × VOLUME approximation, not exchange reported traded turnover.
     return h;
   }
+
+  /** Completed daily price evidence for next-session research (never a live quote). */
+  static final class NextSessionHistory {
+    String sessionDate;
+    long candleMs;
+    double open,high,low,close,volume,previousClose,priorHigh20,avgValue20,avgVolume20;
+    int completedSessions;
+  }
+
+  NextSessionHistory nextSessionHistory(String symbol) throws Exception {
+    if(!symbol.matches("[A-Z0-9&-]{1,26}"))throw new IllegalArgumentException("NSE symbol invalid");
+    java.time.ZonedDateTime local=java.time.ZonedDateTime.now(IST);
+    // Latest daily candle is not trusted until after the close has been processed.
+    LocalDate cutoff=local.toLocalTime().isBefore(LocalTime.of(16,30))?
+      local.toLocalDate().minusDays(1):local.toLocalDate();
+    LocalDate start=cutoff.minusDays(155);
+    String path="/v1/historical/candles?exchange=NSE&segment=CASH&groww_symbol="+
+      encoded("NSE-"+symbol)+"&start_time="+encoded(start+" 09:15:00")+
+      "&end_time="+encoded(cutoff+" 16:15:00")+"&candle_interval=1day";
+    JSONObject data=call("GET",path,token(),null).optJSONObject("payload");
+    JSONArray rows=data==null?null:data.optJSONArray("candles");
+    if(rows==null)throw new IllegalStateException("NSE completed daily candles unavailable");
+    List<double[]> candles=new ArrayList<>();
+    for(int i=0;i<rows.length();i++){
+      JSONArray a=rows.optJSONArray(i);
+      if(a==null||a.length()<6)continue;
+      long at=readTime(a.opt(0));
+      if(at<=0||Instant.ofEpochMilli(at).atZone(IST).toLocalDate().isAfter(cutoff))continue;
+      double op=a.optDouble(1,Double.NaN),hi=a.optDouble(2,Double.NaN),
+         lo=a.optDouble(3,Double.NaN),cl=a.optDouble(4,Double.NaN),
+         vol=a.optDouble(5,Double.NaN);
+      if(!Double.isFinite(op)||!Double.isFinite(hi)||!Double.isFinite(lo)||
+         !Double.isFinite(cl)||!Double.isFinite(vol)||op<=0||cl<=0||
+         hi<lo||vol<0)continue;
+      candles.add(new double[]{at,op,hi,lo,cl,vol});
+    }
+    candles.sort((a,b)->Double.compare(a[0],b[0]));
+    if(candles.size()<61)throw new IllegalStateException("Insufficient NSE daily history");
+    int n=candles.size();
+    double[] d=candles.get(n-1),previous=candles.get(n-2);
+    java.time.LocalDate observed=Instant.ofEpochMilli((long)d[0]).atZone(IST).toLocalDate();
+    if(java.time.temporal.ChronoUnit.DAYS.between(observed,cutoff)>7)
+      throw new IllegalStateException("Latest completed NSE session too old");
+    NextSessionHistory h=new NextSessionHistory();h.completedSessions=n;
+    h.candleMs=(long)d[0];h.sessionDate=observed.toString();
+    h.open=d[1];h.high=d[2];h.low=d[3];h.close=d[4];h.volume=d[5];
+    h.previousClose=previous[4];
+    // No look-ahead: exclude the candidate's own closing session from all references.
+    for(int i=n-21;i<n-1;i++){
+      double[] p=candles.get(i);
+      h.priorHigh20=Math.max(h.priorHigh20,p[2]);
+      h.avgVolume20+=p[5]/20;
+      h.avgValue20+=p[4]*p[5]/20;
+    }
+    return h;
+  }
+
   Market quote(String symbol) throws Exception {
     if(!symbol.matches("[A-Z0-9&-]{1,26}"))throw new IllegalArgumentException("Invalid NSE symbol");
     String path="/v1/live-data/quote?exchange=NSE&segment=CASH&trading_symbol="+encoded(symbol);
