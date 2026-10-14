@@ -18,8 +18,12 @@ jobs:
           java-version: '17'
       - name: Install API 35 using preinstalled Android SDK
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)
+          test -n "$SDKMANAGER"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
       - name: Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
