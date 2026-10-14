@@ -1,6 +1,7 @@
 package com.mathformula.alpha;
 
 import android.app.Activity;
+import android.net.Uri;
 import android.app.AlertDialog;
 import android.os.Bundle;
 import android.os.Build;
@@ -50,6 +51,7 @@ public final class MainActivity extends Activity {
   private boolean loading=false;
   private String activeTab="LIVE";
   private boolean serverLoading=false;
+  private static final int EXPORT_DIAGNOSTICS=4165;
   private long serverLastAttemptMs=0,serverLastSuccessMs=0;
   private JSONObject serverStatus=new JSONObject();
   private org.json.JSONArray serverStocks=new org.json.JSONArray();
@@ -118,6 +120,41 @@ public final class MainActivity extends Activity {
     try{unregisterReceiver(scanReceiver);}catch(Exception ignored){}
     super.onPause();}
   @Override protected void onDestroy(){worker.shutdownNow();super.onDestroy();}
+  private void exportLogs(){
+    Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+    intent.setType("application/zip");
+    intent.addCategory(Intent.CATEGORY_OPENABLE);
+    String name="MathFormula_Alpha30_Audit_"+
+      java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmm")
+        .withZone(ZoneId.of("Asia/Kolkata"))
+        .format(Instant.now())+".zip";
+    intent.putExtra(Intent.EXTRA_TITLE,name);
+    try{startActivityForResult(intent,EXPORT_DIAGNOSTICS);}
+    catch(Exception ex){status="Android file picker unavailable";render();}
+  }
+  @Override protected void onActivityResult(int request,int result,Intent data){
+    super.onActivityResult(request,result,data);
+    if(request!=EXPORT_DIAGNOSTICS || result!=RESULT_OK || data==null || data.getData()==null)return;
+    final Uri destination=data.getData();
+    final List<String> chosen=symbols();
+    final String endpoint=serverUrl();
+    final String readToken=vault.get("server_viewer_token");
+    status="Preparing diagnostic ZIP with private credentials excluded…";render();
+    worker.execute(()->{
+      String error=null;
+      try{DiagnosticExporter.save(getApplicationContext(),destination,watchStore,chosen,endpoint,readToken);}
+      catch(Exception ex){error=ex.getClass().getSimpleName();}
+      final String problem=error;
+      handler.post(()->{
+        status=problem==null?
+          "Diagnostic ZIP saved. Upload it in our chat for analysis.":
+          "Export failed ("+problem+"). Try another folder.";
+        Toast.makeText(this,status,Toast.LENGTH_LONG).show();
+        render();
+      });
+    });
+  }
+
   private String format(double d){
     return Double.isFinite(d)?String.format(Locale.US,"₹%,.2f",d):"Unavailable";
   }
@@ -153,6 +190,9 @@ public final class MainActivity extends Activity {
     addButtonRow("NSE Scanner",()->selectTab("SERVER"),"Server Settings",this::editServer);
     addButtonRow("Live",()->selectTab("LIVE"),"Pre-close",()->selectTab("PRE_CLOSE"));
     addButtonRow("Runners & misses",()->selectTab("RUNNERS"),"Audit history",this::showAudit);
+    page.addView(btn("Export Logs (ZIP) · share for review",this::exportLogs),
+      new LinearLayout.LayoutParams(-1,dp(48)));
+    gap(page,10);
     page.addView(btn("View fixed 30 Model Factors",this::showFactors),new LinearLayout.LayoutParams(-1,dp(44)));
     gap(page,10);
     LinearLayout monitor=card();

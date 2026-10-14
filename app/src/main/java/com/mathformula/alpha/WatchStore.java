@@ -59,6 +59,7 @@ final class WatchStore {
     String current=j.optString("stage","");
     if(!current.equals(past))audit("STATE",symbol,past.isEmpty()?"INITIAL":past,
       current,j.optString("next",""),exchangeMs);
+    journal(j);
   }
   void setEarningsDate(String symbol,String day){
     if(!symbol.matches("[A-Z0-9&-]{1,26}"))return;
@@ -75,6 +76,72 @@ final class WatchStore {
   }
   long lastPreClose(){return p.getLong("lastPreClose",0);}
   String precloseSummary(){return p.getString("precloseSummary","No pre-close checkpoint observed yet");}
+  /** Bounded minute-by-minute observed market data, without any account, key or device IDs. */
+  private synchronized void journal(JSONObject observation){
+    try{
+      JSONObject row=new JSONObject();
+      String[] allowed={
+        "symbol","price","changePct","reference","referenceAsOf","tradeMs","polledAt",
+        "high","low","volume","vwap","spreadBps","fiveCount","fifteenCount",
+        "two5m","fifteenConfirmed","aboveVwap5","aboveVwap15",
+        "lastFiveClose","lastFifteenClose","stage","gapPct","modelVersion",
+        "firstObservedPrice","peakObservedPrice","runnerPct","peakRunnerPct",
+        "drawdownFromObservedPeakPct","decision"
+      };
+      for(String key:allowed)if(observation.has(key))row.put(key,observation.opt(key));
+      boundedAppend("alpha30_market_observations.jsonl",row.toString(),3_000_000);
+    }catch(Exception ignored){}
+  }
+  private void boundedAppend(String name,String jsonLine,long maxBytes) throws Exception {
+    File f=new File(context.getFilesDir(),name);
+    if(f.length()>maxBytes){
+      File previous=new File(context.getFilesDir(),name+".previous");
+      if(previous.exists())previous.delete();
+      if(!f.renameTo(previous))throw new java.io.IOException("Market journal rotation unavailable");
+    }
+    try(FileOutputStream out=new FileOutputStream(f,true)){
+      out.write((jsonLine+"\n").getBytes(StandardCharsets.UTF_8));
+    }
+  }
+  /** Sanitize free-form log strings, never include tokens, URLs, email addresses or secrets. */
+  static String safeExplanation(String source){
+    if(source==null)return "";
+    String txt=source.length()>600?source.substring(0,600):source;
+    txt=txt.replaceAll("(?i)https?://\\S+","[LINK REDACTED]");
+    txt=txt.replaceAll("(?i)[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}","[EMAIL REDACTED]");
+    txt=txt.replaceAll("(?i)(token|secret|authorization|password|api[-_ ]?key|bearer)\\s*[:=]\\s*[^\\s,;]+","[CREDENTIAL REDACTED]");
+    return txt;
+  }
+  /** Export only known-safe event fields; exclude sensitive storage and internal settings. */
+  String readExportJournal(String name,boolean market) {
+    StringBuilder out=new StringBuilder();
+    for(String suffix:new String[]{".previous",""}){
+      File file=new File(context.getFilesDir(),name+suffix);
+      if(!file.exists())continue;
+      try(java.io.BufferedReader input=new java.io.BufferedReader(
+          new java.io.InputStreamReader(new java.io.FileInputStream(file),StandardCharsets.UTF_8))){
+        String line;
+        while((line=input.readLine())!=null){
+          if(line.length()>12_000)continue;
+          try{
+            JSONObject raw=new JSONObject(line);JSONObject clean=new JSONObject();
+            String[] allowed=market?
+              new String[]{"symbol","price","changePct","reference","referenceAsOf","tradeMs",
+                "polledAt","high","low","volume","vwap","spreadBps","fiveCount",
+                "fifteenCount","two5m","fifteenConfirmed","aboveVwap5","aboveVwap15",
+                "lastFiveClose","lastFifteenClose","stage","gapPct","modelVersion",
+                "firstObservedPrice","peakObservedPrice","runnerPct","peakRunnerPct",
+                "drawdownFromObservedPeakPct","decision"}:
+              new String[]{"at","exchangeTime","event","symbol","from","to","version"};
+            for(String key:allowed)if(raw.has(key))clean.put(key,raw.opt(key));
+            if(!market)clean.put("explanation",safeExplanation(raw.optString("explanation","")));
+            out.append(clean.toString()).append('\n');
+          }catch(Exception ignored){}
+        }
+      }catch(Exception ignored){}
+    }
+    return out.toString();
+  }
   JSONObject get(String symbol) {
     try{return new JSONObject(p.getString("stock_"+symbol,"{}"));}
     catch(Exception e){return new JSONObject();}

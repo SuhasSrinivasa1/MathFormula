@@ -27,7 +27,7 @@ final class BackendReadOnlyClient {
   }
   JSONObject get(String route) throws Exception {
     if(!("/v1/status".equals(route)||"/v1/watchlist".equals(route)||
-        "/v1/preclose".equals(route)||"/v1/misses".equals(route)||"/v1/events".equals(route)))
+        "/v1/preclose".equals(route)||"/v1/misses".equals(route)||"/v1/events".equals(route)||"/v1/export".equals(route)))
       throw new SecurityException("Unknown read-only research API path");
     HttpURLConnection conn=(HttpURLConnection)new URL(root+route).openConnection();
     try{

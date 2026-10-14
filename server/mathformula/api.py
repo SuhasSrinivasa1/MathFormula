@@ -35,6 +35,47 @@ class Handler(BaseHTTPRequestHandler):
             self._send(401,{"error":"Valid read-only bearer token required"});return
         try:
             with db(self.server.store_path) as conn:
+                if path=="/v1/export":
+                    # Bounded diagnostic export: past discoveries and outcomes, never broker credentials,
+                    # authorization headers, device IDs, Groww tokens, or raw server environment.
+                    counts={}
+                    for key,table in (("scans","candidate_scans"),("candidates","candidates"),
+                        ("outcomes","outcomes"),("audit","audit"),("events","events"),
+                        ("currentFactors","factors")):
+                        counts[key]=conn.execute("SELECT COUNT(*) n FROM "+table).fetchone()["n"]
+                    scans=_rows(conn,"""SELECT day,window,at_ms,universe_total,prices_updated,
+                         eligible,reason,scanner_version
+                         FROM candidate_scans ORDER BY id DESC LIMIT 500""")
+                    candidates=_rows(conn,"""SELECT day,window,symbol,created_ms,price,reference,
+                         rank_score,stage,alpha_score,coverage_pct,details
+                         FROM candidates ORDER BY created_ms DESC,rank_score DESC LIMIT 650""")
+                    for candidate in candidates:
+                        candidate["details"]=json.loads(candidate["details"])
+                        candidate["decision"]="NO SIGNAL"
+                    outcomes=_rows(conn,"""SELECT day,window,symbol,horizon,peak_return_pct,
+                         close_return_pct,captured,computed_ms
+                         FROM outcomes ORDER BY day DESC,peak_return_pct DESC LIMIT 1200""")
+                    events=_rows(conn,"""SELECT symbol,published_ms,scheduled_day,event_type,title
+                        FROM events WHERE published_ms<=? ORDER BY published_ms DESC LIMIT 100""",
+                        (int(time.time()*1000),))
+                    factors=_rows(conn,"""SELECT symbol,factor,value,observed_ms FROM factors
+                        ORDER BY observed_ms DESC LIMIT 900""")
+                    audits=_rows(conn,"""SELECT at_ms,type,symbol,message FROM audit
+                        ORDER BY id DESC LIMIT 300""")
+                    self._send(200,{"modelVersion":VERSION,"exportFormat":"server-research-audit-v1",
+                        "generatedUtcMs":int(time.time()*1000),
+                        "scope":"Most recent bounded server research records; NOT full history",
+                        "fullModelOperational":False,"readOnly":True,
+                        "countInDb":counts,
+                        "returnedCounts":{"scans":len(scans),"candidates":len(candidates),
+                          "outcomes":len(outcomes),"audit":len(audits),"events":len(events),
+                          "currentFactors":len(factors)},
+                        "scans":scans,"candidates":candidates,"outcomes":outcomes,
+                        "audit":audits,"events":events,"currentFactors":factors,
+                        "limitations":"Factors represent latest imported values only; "
+                            "candidate coverage and rank are point-in-time records, "
+                            "no verified executable BUY and no calibration."})
+                    return
                 if path=="/v1/status":
                     scan=conn.execute("SELECT * FROM candidate_scans ORDER BY id DESC LIMIT 1").fetchone()
                     universe=conn.execute("SELECT COUNT(*) n FROM universe").fetchone()["n"]
