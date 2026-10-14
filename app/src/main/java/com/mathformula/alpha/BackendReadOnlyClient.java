@@ -27,6 +27,7 @@ final class BackendReadOnlyClient {
   }
   JSONObject get(String route) throws Exception {
     if(!("/v1/status".equals(route)||"/v1/watchlist".equals(route)||
+        "/v1/recommendations/live".equals(route)||"/v1/recommendations/closed".equals(route)||
         "/v1/preclose".equals(route)||"/v1/misses".equals(route)||"/v1/events".equals(route)||"/v1/export".equals(route)))
       throw new SecurityException("Unknown read-only research API path");
     HttpURLConnection conn=(HttpURLConnection)new URL(root+route).openConnection();
@@ -47,7 +48,8 @@ final class BackendReadOnlyClient {
           if(out.length()>1500000)throw new IllegalStateException("Scanner response too large");
         }
         JSONObject j=new JSONObject(out.toString());
-        if("/v1/watchlist".equals(route)&&!"Alpha-30-v1.0".equals(j.optString("modelVersion")))
+        if(("/v1/watchlist".equals(route)||route.startsWith("/v1/recommendations/"))&&
+            !"Alpha-30-v1.0".equals(j.optString("modelVersion")))
           throw new IllegalStateException("Scanner formula version mismatch");
         return j;
       }
