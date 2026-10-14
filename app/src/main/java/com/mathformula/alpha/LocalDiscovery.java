@@ -122,6 +122,8 @@ final class LocalDiscovery {
         .putString("sessionSnapshots",updated.toString())
         .putLong("lastScan",result.optLong("scannedAtMs",System.currentTimeMillis()))
         .putString("lastError","").apply();
+      // Lifecycle changes only after a successfully persisted, completed scan.
+      new RecommendationLedger(app).onCompletedScan(result);
       ResearchAlerts.newShortlist(app,result,previous);
     }catch(Exception ex){failure("Could not preserve completed scan");}
   }
@@ -159,6 +161,8 @@ final class LocalDiscovery {
       scan.put("quoteRefreshMs",System.currentTimeMillis());
       // Do not update scannedAtMs or session snapshots: this was NOT a new full scan.
       prefs.edit().putString("latest",scan.toString()).apply();
+      // A fresh quote updates a watch, but never promotes it to a BUY signal.
+      new RecommendationLedger(app).onQuoteRefresh(fresh);
     }catch(Exception ignored){}
   }
   void failure(String why){
