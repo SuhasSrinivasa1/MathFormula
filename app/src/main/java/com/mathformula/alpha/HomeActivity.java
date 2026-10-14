@@ -613,7 +613,8 @@ public final class HomeActivity extends Activity {
       for(int i=0;i<pool.length();i++){
         JSONObject candidate=pool.optJSONObject(i);if(candidate==null)continue;
         String symbol=candidate.optString("symbol","");
-        if(!symbol.matches("[A-Z0-9&-]{1,26}"))continue;
+        if(!symbol.matches("[A-Z0-9&-]{1,26}")||
+           !"EQ".equals(candidate.optString("nseSeries","")))continue;
         Alpha30EvidenceStore.EvidenceScore proof=evidenceStore.overnight(symbol,now);
         scored++;
         bestCoverage=Math.max(bestCoverage,proof.overnight.coverage);
@@ -631,7 +632,7 @@ public final class HomeActivity extends Activity {
     }
     eligible.sort((a,b)->Double.compare(
         b.optDouble("alpha30OvernightScore",0),a.optDouble("alpha30OvernightScore",0)));
-    c.addView(text("Historical candidates reviewed: "+scored+
+    c.addView(text("Normal EQ-series historical candidates reviewed: "+scored+
       " · sufficient factor coverage: "+sufficient+
       " · overnight score-qualified: "+eligible.size(),12,INK,true));
     spaceIn(c,4);
@@ -640,11 +641,11 @@ public final class HomeActivity extends Activity {
       11,MUTED,false));
     if(eligible.isEmpty()){
       spaceIn(c,8);
-      c.addView(text("NO VERIFIED OVERNIGHT TOP 3 · source-backed financial, catalyst and macro factors "+
+      c.addView(text("NO PDF-QUALIFIED OVERNIGHT TOP 3 · source-backed financial, catalyst and macro factors "+
         "are not automatically supplied by Groww market quotes.",12,AMBER,true));
     }else{
       spaceIn(c,8);
-      c.addView(text("Source-declared Alpha-30 watchlist · review provenance independently",12,BLUE,true));
+      c.addView(text("Source-declared Alpha-30 watchlist · verify provenance independently",12,BLUE,true));
       for(int i=0;i<Math.min(3,eligible.size());i++){
         JSONObject candidate=eligible.get(i);
         String symbol=candidate.optString("symbol");
