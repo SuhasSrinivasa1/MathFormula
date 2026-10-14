@@ -609,15 +609,17 @@ public final class HomeActivity extends Activity {
     ArrayList<JSONObject> eligible=new ArrayList<>();
     int sufficient=0,scored=0;double bestCoverage=0;
     long now=System.currentTimeMillis();
+    Map<String,Alpha30EvidenceStore.EvidenceScore> batch=evidenceStore.bulkOvernight(pool,now);
     if(pool!=null){
       for(int i=0;i<pool.length();i++){
         JSONObject candidate=pool.optJSONObject(i);if(candidate==null)continue;
         String symbol=candidate.optString("symbol","");
         if(!symbol.matches("[A-Z0-9&-]{1,26}")||
            !"EQ".equals(candidate.optString("nseSeries","")))continue;
-        Alpha30EvidenceStore.EvidenceScore proof=evidenceStore.overnight(symbol,now);
+        Alpha30EvidenceStore.EvidenceScore proof=batch.get(symbol);
         scored++;
         bestCoverage=Math.max(bestCoverage,proof.overnight.coverage);
+        if(proof==null)continue;
         if(proof.overnight.coverage>=90)sufficient++;
         if(proof.shortlistEligible()){
           try{
