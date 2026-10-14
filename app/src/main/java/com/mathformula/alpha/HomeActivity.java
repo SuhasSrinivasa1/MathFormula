@@ -540,12 +540,19 @@ public final class HomeActivity extends Activity {
   private void renderLive(){
     JSONObject scan=discovery.latest();
     JSONArray live=serverConfigured()?(remoteConnected?remoteLive:new JSONArray()):ledger.live();
-    root.addView(text("Live recommendations",22,INK,true));
+    boolean nextSession="NEXT_SESSION_RESEARCH".equals(scan.optString("scanMode",""));
+    root.addView(text(nextSession?"Tomorrow's Top 3 research":"Live recommendations",22,INK,true));
     space(4);
-    root.addView(text("Forward-looking watches, carried forward while the setup remains valid.",12,MUTED,false));
+    root.addView(text(nextSession?
+       "Latest completed NSE session: "+scan.optString("sourceSessionDate","unknown")+
+       " · technical watchlist, not live BUY signals":
+       "Forward-looking watches, carried forward while the setup remains valid.",
+       12,MUTED,false));
     space(13);
     LinearLayout overview=card();
-    overview.addView(text(live.length()+"  active research watches",20,INK,true));
+    overview.addView(text((nextSession?
+      Math.min(3,scan.optJSONArray("top")==null?0:scan.optJSONArray("top").length())+" next-session candidates · "+
+      live.length()+" ongoing watches":live.length()+" active research watches"),20,INK,true));
     spaceIn(overview,5);
     int verified=0;
     if(serverConfigured()&&remoteConnected&&open())
