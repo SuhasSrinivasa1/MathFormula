@@ -326,7 +326,7 @@ public final class HomeActivity extends Activity {
     String stage=closed?RecommendationLedger.friendly(j.optString("closeCode")):
       j.optString("status",j.optString("stage","WATCHING"));
     int stageColor=closed?MUTED:stage.contains("BREAKOUT")?AMBER:BLUE;
-    header.addView(text(stage.toUpperCase(Locale.US),10,stageColor,true));
+    header.addView(text(stage.replace('_',' ').toUpperCase(Locale.US),10,stageColor,true));
     c.addView(header);spaceIn(c,5);
     boolean remote=serverConfigured()&&remoteConnected;
     boolean buyNow=remote&&!closed&&open()&&
