@@ -35,7 +35,7 @@ final class Alpha30EvidenceStore extends SQLiteOpenHelper {
     180*DAY,180*DAY,180*DAY,180*DAY,180*DAY,180*DAY,180*DAY,180*DAY,180*DAY,180*DAY,
     3*DAY,45*DAY,45*DAY,45*DAY,45*DAY,60*DAY,90*DAY,
     2*DAY,2*DAY,2*DAY,2*DAY,2*DAY,2*DAY,2*DAY,2*DAY,
-    5*60000L,5*60000L,5*60000L,5*60000L,5*60000L
+    2*DAY,2*DAY,2*DAY,2*DAY,5*60000L
   };
   static {if(TTL.length!=30)throw new AssertionError("30 TTLs");}
   Alpha30EvidenceStore(Context context){
