@@ -87,6 +87,56 @@ final class Alpha30EvidenceStore extends SQLiteOpenHelper {
     }
     return new EvidenceScore(Alpha30Engine.score(factors,true),n,missing);
   }
+  /**
+   * Bulk scoring is deliberately one database pass instead of hundreds of
+   * queries on the Android main UI thread. No unsourced default metrics.
+   */
+  java.util.Map<String,EvidenceScore> bulkOvernight(org.json.JSONArray pool,long asOf){
+    java.util.HashSet<String> symbols=new java.util.HashSet<>();
+    if(pool!=null)for(int i=0;i<pool.length();i++){
+      JSONObject candidate=pool.optJSONObject(i);
+      if(candidate!=null&&"EQ".equals(candidate.optString("nseSeries"))){
+        String symbol=candidate.optString("symbol","");
+        if(symbol.matches("[A-Z0-9&-]{1,26}"))symbols.add(symbol);
+      }
+    }
+    java.util.Map<String,double[]> bySymbol=new java.util.HashMap<>();
+    for(String symbol:symbols){
+      double[] values=new double[30];java.util.Arrays.fill(values,Double.NaN);
+      bySymbol.put(symbol,values);
+    }
+    if(symbols.isEmpty())return new java.util.HashMap<>();
+    try(Cursor rows=getReadableDatabase().rawQuery(
+         "SELECT symbol,factor,value,public_ms,source FROM factor WHERE factor BETWEEN 1 AND 29",null)){
+      while(rows.moveToNext()){
+        String symbol=rows.getString(0);double[] values=bySymbol.get(symbol);
+        if(values==null)continue;
+        int factor=rows.getInt(1)-1;
+        if(factor<0||factor>=29)continue;
+        long age=asOf-rows.getLong(3);
+        String provenance=rows.getString(4);
+        double value=rows.getDouble(2);
+        if(age<0||age>TTL[factor]||provenance==null||
+           !provenance.startsWith("https://")||
+           !Double.isFinite(value)||value<0||value>1)continue;
+        values[factor]=value;
+      }
+    }
+    java.util.Map<String,EvidenceScore> out=new java.util.HashMap<>();
+    for(java.util.Map.Entry<String,double[]> e:bySymbol.entrySet()){
+      int observed=0;
+      JSONArray missing=new JSONArray();
+      for(int i=0;i<29;i++){
+        if(Double.isFinite(e.getValue()[i])){observed++;continue;}
+        try{missing.put(new JSONObject().put("factor",i+1)
+          .put("name",Alpha30Engine.FACTORS[i]).put("weight",Alpha30Engine.WEIGHTS[i]));}
+        catch(org.json.JSONException ignored){}
+      }
+      out.put(e.getKey(),new EvidenceScore(
+        Alpha30Engine.score(e.getValue(),true),observed,missing));
+    }
+    return out;
+  }
   static final class ImportResult {
     int accepted,rejected,staleOrFuture;
     String description(){return accepted+" accepted, "+rejected+
