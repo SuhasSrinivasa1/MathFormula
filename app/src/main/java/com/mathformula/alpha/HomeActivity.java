@@ -47,10 +47,12 @@ public final class HomeActivity extends Activity {
   private boolean busy=false,quoteBusy=false;
   private long lastQuoteAttempt=0;
   private boolean startedWhileOpen=false;
+  private String lastVisibleDate="";
   private final Runnable autoUpdate=new Runnable(){
     @Override public void run(){
       boolean open=MarketSchedule.weekdayTradingTime(System.currentTimeMillis());
       if(startedWhileOpen && !open && "LIVE".equals(section)) section="CLOSED";
+      if(!startedWhileOpen && open && "CLOSED".equals(section)) section="LIVE";
       startedWhileOpen=open;
       if(open && "LIVE".equals(section)){
         ensureFresh();
@@ -99,6 +101,7 @@ public final class HomeActivity extends Activity {
     secrets=new SecureGrowwStore(this);groww=new GrowwReadOnlyClient(secrets);
     discovery=new LocalDiscovery(this);
     startedWhileOpen=open();
+    lastVisibleDate=todayIst();
     section=startedWhileOpen?"LIVE":"CLOSED";
     getWindow().setStatusBarColor(Color.rgb(247,249,252));
     getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
@@ -109,8 +112,17 @@ public final class HomeActivity extends Activity {
     scroll.addView(root);setContentView(scroll);
     render();
   }
+  private String todayIst(){
+    return java.time.LocalDate.now(MarketSchedule.IST).toString();
+  }
   @Override protected void onResume(){
-    super.onResume();handler.removeCallbacks(autoUpdate);
+    super.onResume();
+    if(!todayIst().equals(lastVisibleDate)){
+      section=open()?"LIVE":"CLOSED";
+      lastVisibleDate=todayIst();
+      startedWhileOpen=open();
+    }
+    handler.removeCallbacks(autoUpdate);
     handler.postDelayed(autoUpdate,200);
   }
   @Override protected void onPause(){handler.removeCallbacks(autoUpdate);super.onPause();}
