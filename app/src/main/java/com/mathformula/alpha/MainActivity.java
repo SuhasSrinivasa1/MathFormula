@@ -140,14 +140,15 @@ public final class MainActivity extends Activity {
     LinearLayout monitor=card();
     long sincePoll=System.currentTimeMillis()-watchStore.lastPoll();
     boolean healthy=watchStore.enabled()&&watchStore.lastPoll()>0&&sincePoll<420000L;
-    monitor.addView(text("Background status: "+(healthy?"MONITORING":watchStore.enabled()?"COVERAGE GAP":"STOPPED"),14,INK,true));gap(monitor,5);
+    monitor.addView(text("Background status: "+(!watchStore.enabled()?"STOPPED":!healthy?"COVERAGE GAP":watchStore.lastPollOk()?"MONITORING":"DATA ERROR"),14,INK,true));gap(monitor,5);
     monitor.addView(text("Last scan: "+clock(watchStore.lastPoll())+(watchStore.lastPoll()>0?" · "+(sincePoll/1000)+"s ago":" · not scanned"),12,MUTED,false));
     if(!watchStore.lastPollOk()&&!watchStore.lastError().isEmpty()){
       gap(monitor,5);monitor.addView(text("Last issue: "+watchStore.lastError(),12,AMBER,false));
     }
     gap(monitor,5);
     monitor.addView(text("Android background is best-effort, not a guaranteed 24/7 scanner. Market gaps require an independent server.",12,AMBER,false));
-    page.addView(text("NSE WATCHLIST",12,BLUE,true));gap(page,10);
+    page.addView(text("NSE WATCHLIST",12,BLUE,true));gap(page,5);
+    page.addView(text("Watching → Near breakout → Crossed → Confirming → Full-model pending. Price movement alone never means BUY.",12,MUTED,false));gap(page,10);
     // Persistent candidates: never disappear merely because a live gate failed.
     for(String symbol:symbols()){
       JSONObject snapshot=watchStore.get(symbol);
