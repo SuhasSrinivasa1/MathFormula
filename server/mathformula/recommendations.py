@@ -6,6 +6,8 @@ sourced and consistent. This module never places orders.
 """
 import json
 from datetime import datetime
+from zoneinfo import ZoneInfo
+IST=ZoneInfo('Asia/Kolkata')
 from math import isfinite
 from .alpha30 import score, WEIGHTS, VERSION
 from .storage import ms, audit
@@ -118,7 +120,7 @@ def record_discovery(conn,items,now):
                 SET last_seen_ms=?,last_scan_ms=?,research_rank=?,reference=? WHERE id=?""",
                 (now,now,details["rank"],reference,active["id"]))
         else:
-            day=datetime.fromtimestamp(now/1000).strftime("%Y-%m-%d")
+            day=datetime.fromtimestamp(now/1000,IST).strftime("%Y-%m-%d")
             if conn.execute("SELECT 1 FROM recommendations WHERE symbol=? AND opened_day=?",(symbol,day)).fetchone():
                 continue
             rec_id=symbol+"-"+str(now)
@@ -166,7 +168,7 @@ def reevaluate(conn,now,market_open):
         # Close ONLY against actual stored exchange-day EOD history, never using weekday approximations.
         sessions=conn.execute("""SELECT COUNT(DISTINCT day) AS n FROM eod
             WHERE symbol=? AND day>? AND day<=date(?)""",
-            (symbol,rec["opened_day"],datetime.fromtimestamp(now/1000).strftime("%Y-%m-%d"))).fetchone()["n"]
+            (symbol,rec["opened_day"],datetime.fromtimestamp(now/1000,IST).strftime("%Y-%m-%d"))).fetchone()["n"]
         if sessions>=3 and d!="BUY_ELIGIBLE":
             conn.execute("UPDATE recommendations SET status='CLOSED',closed_ms=?,close_code='EXPIRED',close_reason=? WHERE id=?",
                 (now,"Research review expired after three recorded subsequent EOD sessions",rec["id"]))
