@@ -35,6 +35,13 @@ final class LocalDiscovery {
     app=c.getApplicationContext();
     prefs=app.getSharedPreferences(PREF,Context.MODE_PRIVATE);
     historyCache=app.getSharedPreferences("mathformula_eod_cache_v26",Context.MODE_PRIVATE);
+    // Upgrade from the v2.5 55-symbol heuristic: preserve prior history but
+    // require a fresh v2.6 full-universe pass as soon as the app is opened.
+    if(!prefs.getBoolean("v26_migrated",false)){
+      prefs.edit().putBoolean("v26_migrated",true)
+        .putLong("lastScan",0).putLong("lastAttempt",0)
+        .remove("preliminary").remove("scanProgress").apply();
+    }
   }
   JSONObject latest(){
     try{return new JSONObject(prefs.getString("latest","{}"));}
@@ -553,7 +560,7 @@ final class LocalDiscovery {
       for(int i=0;i<Math.min(3,candidates.size());i++)top.put(candidates.get(i));
       long now=System.currentTimeMillis();
       JSONObject result=new JSONObject()
-         .put("version","on-device-discovery-v1")
+         .put("version","on-device-discovery-v2.6")
          .put("modelVersion",Alpha30Engine.VERSION)
          .put("formulaUnchanged",true)
          .put("scannedAtMs",now).put("scanStartedMs",scanStarted).put("universeCount",universe.size())
