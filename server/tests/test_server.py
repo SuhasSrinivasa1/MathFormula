@@ -24,15 +24,15 @@ class EngineTests(unittest.TestCase):
 class NseImportTests(unittest.TestCase):
     def test_bhavdata_turnover_units(self):
         example=("SYMBOL,SERIES,DATE1,OPEN_PRICE,HIGH_PRICE,LOW_PRICE,CLOSE_PRICE,"
-                 "TTL_TRD_QNTY,TURNOVER_LACS\\n"
-                 "TARIL,EQ,13-Oct-2026,300,315,296,304,7320000,2500\\n"
-                 "NOTEQ,BE,13-Oct-2026,100,100,99,99,100,1\\n")
+                 "TTL_TRD_QNTY,TURNOVER_LACS\n"
+                 "TARIL,EQ,13-Oct-2026,300,315,296,304,7320000,2500\n"
+                 "NOTEQ,BE,13-Oct-2026,100,100,99,99,100,1\n")
         rows=convert_bhavdata(example,date(2026,10,13))
         self.assertEqual(len(rows),1)
         self.assertEqual(rows[0]["turnover_inr"],250000000)
     def test_fails_closed_on_unknown_nse_schema(self):
         with self.assertRaises(ValueError):
-            convert_bhavdata("SYMBOL,OTHER\\nTARIL,X\\n",date(2026,10,13))
+            convert_bhavdata("SYMBOL,OTHER\nTARIL,X\n",date(2026,10,13))
 
 class DataTests(unittest.TestCase):
     def setUp(self):
