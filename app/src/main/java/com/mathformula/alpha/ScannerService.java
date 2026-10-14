@@ -190,7 +190,7 @@ public final class ScannerService extends Service {
         }
       }
       boolean okay=success==symbols.size()&&success>0;
-      if(MarketSchedule.checkpoint(System.currentTimeMillis())){
+      if(MarketSchedule.checkpoint(now)){
         StringBuilder shortlist=new StringBuilder();
         for(String symbol:symbols){
           org.json.JSONObject j=store.get(symbol);
@@ -200,7 +200,7 @@ public final class ScannerService extends Service {
           String event=store.earningsDate(symbol);
           if(MarketSchedule.dueSoon(event,System.currentTimeMillis()))shortlist.append(" · MANUAL earnings tag ").append(event);
         }
-        String label=MarketSchedule.checkpointLabel(System.currentTimeMillis());
+        String label=MarketSchedule.checkpointLabel(now);
         store.recordPreClose(label,shortlist.toString());
         reminder("Pre-close watch · "+label,"Updated watched symbols. Check MathFormula; not a BUY signal.");
       }

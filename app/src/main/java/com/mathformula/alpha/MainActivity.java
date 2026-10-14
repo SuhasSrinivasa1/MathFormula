@@ -459,14 +459,14 @@ public final class MainActivity extends Activity {
           failures.add(s+" · "+(message==null?"Unavailable":message));
         }
       }
-      if(MarketSchedule.checkpoint(System.currentTimeMillis())){
+      if(MarketSchedule.checkpoint(now)){
         StringBuilder summary=new StringBuilder();
         for(String symbol:sym){
           JSONObject snap=watchStore.get(symbol);
           if(summary.length()>0)summary.append(" | ");
           summary.append(symbol).append(": ").append(snap.optString("stage","NO DATA"));
         }
-        watchStore.recordPreClose(MarketSchedule.checkpointLabel(System.currentTimeMillis()),summary.toString());
+        watchStore.recordPreClose(MarketSchedule.checkpointLabel(now),summary.toString());
       }
       handler.post(()->{
         quotes.clear();quotes.addAll(result);errors.clear();errors.addAll(failures);
