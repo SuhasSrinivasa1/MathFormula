@@ -25,6 +25,25 @@ created_ms INTEGER NOT NULL,price REAL NOT NULL,reference REAL NOT NULL,rank_sco
 stage TEXT NOT NULL,alpha_score REAL,coverage_pct REAL,details TEXT NOT NULL,PRIMARY KEY(day,window,symbol));
 CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT,at_ms INTEGER NOT NULL,type TEXT NOT NULL,
 symbol TEXT NOT NULL,message TEXT NOT NULL,details TEXT NOT NULL DEFAULT '{}');
+CREATE TABLE IF NOT EXISTS recommendations(
+ id TEXT PRIMARY KEY,symbol TEXT NOT NULL,opened_day TEXT NOT NULL,opened_ms INTEGER NOT NULL,
+ last_seen_ms INTEGER NOT NULL,last_scan_ms INTEGER NOT NULL,reference REAL NOT NULL,research_rank INTEGER NOT NULL,
+ status TEXT NOT NULL,decision TEXT NOT NULL,price REAL,quote_ms INTEGER,score REAL,coverage_pct REAL,
+ reasons TEXT NOT NULL DEFAULT '[]',factor_evidence TEXT NOT NULL DEFAULT '[]',
+ execution_evidence TEXT NOT NULL DEFAULT '{}',evaluated_ms INTEGER,
+ closed_ms INTEGER,close_code TEXT,close_reason TEXT);
+CREATE INDEX IF NOT EXISTS idx_recommendations_active ON recommendations(symbol,closed_ms);
+CREATE TABLE IF NOT EXISTS recommendation_events(
+ id INTEGER PRIMARY KEY AUTOINCREMENT,recommendation_id TEXT NOT NULL,symbol TEXT NOT NULL,
+ at_ms INTEGER NOT NULL,previous_status TEXT NOT NULL,next_status TEXT NOT NULL,
+ details TEXT NOT NULL DEFAULT '{}');
+CREATE TABLE IF NOT EXISTS execution_evidence(
+ symbol TEXT PRIMARY KEY,observed_ms INTEGER NOT NULL,source TEXT NOT NULL,
+ breakout15m INTEGER NOT NULL,confirmation5m INTEGER NOT NULL,
+ vwap5m INTEGER NOT NULL,vwap15m INTEGER NOT NULL,
+ rvol REAL,sector_positive INTEGER NOT NULL,liquidity_verified INTEGER NOT NULL,
+ spread_bps REAL,net_rr REAL,entry REAL,stop_loss REAL,target REAL,
+ trading_allowed INTEGER NOT NULL,material_risk_clear INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS outcomes(day TEXT NOT NULL,window TEXT NOT NULL,symbol TEXT NOT NULL,
 horizon INTEGER NOT NULL,peak_return_pct REAL NOT NULL,close_return_pct REAL NOT NULL,
 captured INTEGER NOT NULL,computed_ms INTEGER NOT NULL,PRIMARY KEY(day,window,symbol,horizon));
@@ -146,3 +165,59 @@ def import_factors(conn,path):
             count+=1
     audit(conn,"FACTORS","","Point-in-time factor import",{"count":count,"file":Path(path).name})
     conn.commit();return count
+
+def import_execution_evidence(conn,path):
+    """Operator-controlled verified gate feed. Never infer candles from a single LTP.
+    Format: symbol,observed_at_utc,source,breakout15m,confirmation5m,
+    vwap5m,vwap15m,rvol,sector_positive,liquidity_verified,spread_bps,
+    net_rr,entry,stop_loss,target,trading_allowed,material_risk_clear.
+    Values must be based on completed candles and a sourced net-RR computation.
+    """
+    count=0; now=ms()
+    keys=("breakout15m","confirmation5m","vwap5m","vwap15m","sector_positive",
+          "liquidity_verified","trading_allowed","material_risk_clear")
+    with open(path,newline='',encoding='utf-8-sig') as f:
+        for raw in csv.DictReader(f):
+            row=_upper(raw)
+            symbol=_get(row,"SYMBOL").upper()
+            source=_get(row,"SOURCE")
+            observed=_get(row,"OBSERVED_AT_UTC")
+            try:
+                timestamp=datetime.fromisoformat(observed.replace("Z","+00:00"))
+                if timestamp.tzinfo is None: continue
+                t=int(timestamp.timestamp()*1000)
+                if t>now+3000 or t<now-300000: continue
+                gates=[]
+                for name in keys:
+                    value=_get(row,name)
+                    if value not in ("0","1"):raise ValueError("Boolean gate not 0 or 1")
+                    gates.append(int(value))
+                numbers=[float(_get(row,name)) for name in
+                    ("RVOL","SPREAD_BPS","NET_RR","ENTRY","STOP_LOSS","TARGET")]
+                if not all(__import__("math").isfinite(n) for n in numbers):continue
+                rv,spread,rr,entry,stop,target=numbers
+                if not (rv>=0 and spread>=0 and rr>=0 and 0<stop<entry<target):
+                    continue
+                if rr>(target-entry)/(entry-stop)+0.001:continue
+                if not source.startswith("https://") or not symbol or not symbol.replace("-","").replace("&","").isalnum():continue
+            except (ValueError,TypeError,OverflowError,ZeroDivisionError):continue
+            data=(symbol,t,source,*gates[:4],rv,*gates[4:6],spread,rr,
+                entry,stop,target,*gates[6:])
+            conn.execute("""INSERT INTO execution_evidence
+              (symbol,observed_ms,source,breakout15m,confirmation5m,
+               vwap5m,vwap15m,rvol,sector_positive,liquidity_verified,
+               spread_bps,net_rr,entry,stop_loss,target,trading_allowed,material_risk_clear)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               ON CONFLICT(symbol) DO UPDATE SET
+                 observed_ms=excluded.observed_ms,source=excluded.source,
+                 breakout15m=excluded.breakout15m,confirmation5m=excluded.confirmation5m,
+                 vwap5m=excluded.vwap5m,vwap15m=excluded.vwap15m,rvol=excluded.rvol,
+                 sector_positive=excluded.sector_positive,liquidity_verified=excluded.liquidity_verified,
+                 spread_bps=excluded.spread_bps,net_rr=excluded.net_rr,entry=excluded.entry,
+                 stop_loss=excluded.stop_loss,target=excluded.target,
+                 trading_allowed=excluded.trading_allowed,
+                 material_risk_clear=excluded.material_risk_clear""",data)
+            count+=1
+    audit(conn,"EXECUTION_FEED","","Verified-gate import",{"count":count,"sourceFile":Path(path).name})
+    conn.commit()
+    return count
