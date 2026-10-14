@@ -1,11 +1,10 @@
-name: Build MathFormula v2.3 Android APK
+name: MathFormula stable Android release
 on:
   push:
     branches: [main, 'feat/**']
-  pull_request:
   workflow_dispatch:
 concurrency:
-  group: mathformula-android-${{ github.sha }}
+  group: mathformula-v24-${{ github.sha }}
   cancel-in-progress: false
 jobs:
   android:
@@ -31,26 +30,55 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Assemble APK (pre-release debug signing)
-        run: gradle --no-daemon :app:assembleDebug
-      - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk MathFormula-v2.3.0-Preview.apk
-      - name: Upload APK artifact
+      - name: Prepare stable keystore only when GitHub secrets are configured
+        env:
+          SIGNING_KEY_B64: ${{ secrets.MATHFORMULA_RELEASE_KEYSTORE_B64 }}
+          SIGNING_PASSWORD: ${{ secrets.MATHFORMULA_RELEASE_PASSWORD }}
+        run: |
+          if [[ -n "$SIGNING_KEY_B64" && -n "$SIGNING_PASSWORD" ]]; then
+            umask 077
+            printf '%s' "$SIGNING_KEY_B64" | base64 -d > "$RUNNER_TEMP/mathformula-release.p12"
+            echo "MATHFORMULA_RELEASE_KEYSTORE=$RUNNER_TEMP/mathformula-release.p12" >> "$GITHUB_ENV"
+            echo "STABLE_SIGNING_CONFIGURED=true" >> "$GITHUB_ENV"
+          else
+            echo "STABLE_SIGNING_CONFIGURED=false" >> "$GITHUB_ENV"
+            echo "Signing secrets missing. Building unsigned release for local signing only."
+          fi
+      - name: Compile release
+        env:
+          MATHFORMULA_RELEASE_PASSWORD: ${{ secrets.MATHFORMULA_RELEASE_PASSWORD }}
+        run: gradle --no-daemon :app:assembleRelease
+      - name: Stage APK
+        run: |
+          if [[ "$STABLE_SIGNING_CONFIGURED" == "true" ]]; then
+            cp app/build/outputs/apk/release/app-release.apk MathFormula-v2.4.0-Stable.apk
+          else
+            cp app/build/outputs/apk/release/app-release-unsigned.apk MathFormula-v2.4.0-UNSIGNED.apk
+          fi
+      - name: Upload stable signed release APK
+        if: env.STABLE_SIGNING_CONFIGURED == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: MathFormula-v2.3.0-Preview
-          path: MathFormula-v2.3.0-Preview.apk
+          name: MathFormula-v2.4.0-Stable
+          path: MathFormula-v2.4.0-Stable.apk
           if-no-files-found: error
-      - name: Publish download link as GitHub pre-release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/feat/scanner-visibility-v23'
+      - name: Upload unsigned release for secure offline signing
+        if: env.STABLE_SIGNING_CONFIGURED != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MathFormula-v2.4.0-UNSIGNED
+          path: MathFormula-v2.4.0-UNSIGNED.apk
+          if-no-files-found: error
+      - name: Publish signed release only
+        if: env.STABLE_SIGNING_CONFIGURED == 'true' && github.ref == 'refs/heads/feat/stable-release-v24'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v2.3.0-rc1 >/dev/null 2>&1; then
-            gh release edit v2.3.0-rc1 --prerelease --target "$GITHUB_SHA"
+          if gh release view v2.4.0 >/dev/null 2>&1; then
+            gh release edit v2.4.0 --target "$GITHUB_SHA" --title "MathFormula v2.4 stable-signing baseline"
           else
-            gh release create v2.3.0-rc1 --target "$GITHUB_SHA" --prerelease \
-              --title "MathFormula v2.3 preview" \
-              --notes "Visible NSE scan diagnostics, latest scan result and timing, Scan Now control, automatic intraday refresh, and honest market-closed empty states. Groww-only discovery remains research, not a full BUY signal. This pre-release uses Android debug signing; not a production-signed binary."
+            gh release create v2.4.0 --target "$GITHUB_SHA" \
+              --title "MathFormula v2.4 stable-signing baseline" \
+              --notes "Persistent Android package and signing identity. Signer certificate must match subsequent updates."
           fi
-          gh release upload v2.3.0-rc1 MathFormula-v2.3.0-Preview.apk --clobber
+          gh release upload v2.4.0 MathFormula-v2.4.0-Stable.apk --clobber
