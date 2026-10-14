@@ -3,7 +3,8 @@ import os,time,json,threading,logging,urllib.request
 from datetime import datetime,date,time as clock
 from pathlib import Path
 from zoneinfo import ZoneInfo
-from .storage import db,ms,audit,import_universe,import_eod,import_events,import_factors
+from .storage import db,ms,audit,import_universe,import_eod,import_events,import_factors,import_execution_evidence
+from .recommendations import record_discovery,reevaluate
 from .discovery import shortlist
 from .groww import Groww,GrowwError
 from .nse_import import fetch_universe,fetch_daily
@@ -32,7 +33,8 @@ class Scanner:
         source=[("universe",os.getenv("UNIVERSE_FILE",""),import_universe)]
         source +=[("eod",str(x),import_eod) for x in _csv_files(os.getenv("EOD_DIR","/data/eod"))]
         source +=[("events",os.getenv("EVENTS_FILE",""),import_events),
-                  ("factors",os.getenv("FACTORS_FILE",""),import_factors)]
+                  ("factors",os.getenv("FACTORS_FILE",""),import_factors),
+                  ("execution",os.getenv("EXECUTION_EVIDENCE_FILE",""),import_execution_evidence)]
         if not source:return
         with db(self.path) as conn:
             for name,file,fn in source:
@@ -96,6 +98,7 @@ class Scanner:
                 conn.execute("""INSERT OR REPLACE INTO candidates(day,window,symbol,created_ms,price,reference,
                   rank_score,stage,alpha_score,coverage_pct,details) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                     (day,window,s,stamp,p,ref,round(h,4),stage,ascore,coverage,json.dumps(details,separators=(',',':'))))
+            record_discovery(conn,result["items"],stamp)
             audit(conn,"SHORTLIST","","Discovery window complete",
               {"window":window,"universe":result["universe"],"eligible":result["eligible"],
                "selected":len(result["items"]),"scanId":scan})
@@ -112,8 +115,8 @@ class Scanner:
             picked=[r["symbol"] for r in conn.execute(
                 "SELECT symbol FROM candidates WHERE day=? AND window=? ORDER BY rank_score DESC LIMIT 30",
                 (latest["day"],latest["window"]))] if latest else []
-            if not picked:
-                picked=[r["symbol"] for r in conn.execute("SELECT symbol FROM universe ORDER BY symbol LIMIT 0")]
+            for entry in conn.execute("SELECT symbol FROM recommendations WHERE closed_ms IS NULL ORDER BY last_seen_ms DESC LIMIT 100"):
+                if entry["symbol"] not in picked:picked.append(entry["symbol"])
         if not picked:return
         changed=0
         with db(self.path) as conn:
@@ -129,6 +132,10 @@ class Scanner:
                     LOG.warning("Shortlist quote %s unavailable: %s",symbol,type(exc).__name__)
             conn.commit()
         LOG.info("Shortlist quotes refreshed %d/%d",changed,len(picked))
+        with db(self.path) as conn:
+            signals=reevaluate(conn,ms(),self.allowed(local_now()))
+        for item in signals:
+            self.send_webhook(item)
     def send_webhook(self,event):
         if not self.webhook or not self.webhook.startswith("https://"):return
         try:
