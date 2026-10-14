@@ -1,13 +1,13 @@
-# MathFormula — Alpha-30 Android App
+# MathFormula — Alpha-30 (Groww TOTP Read-only)
 
-An Android research companion implementing the **30-factor fixed Alpha-30 v1.0 mathematical score** and strictly gated BUY ELIGIBLE / WAIT / NO SIGNAL outcomes.
+Android NSE stock research app with **direct Groww authentication** using TOTP Token + Secret, Android Keystore-encrypted credentials, actual timestamped market quotes and historical candles.
 
-**Build:** GitHub Actions → Build MathFormula APK → successful run → Artifacts → `MathFormula-debug-apk`. Or build with Android SDK 35, Java 17, Gradle 8.9 using `gradle :app:assembleDebug`.
+**No static IP or order execution.** The app calls only official Groww authentication, quotes and historical candle endpoints.
 
-**Offline:** displays TARIL, GAEL and ADVANCE with clearly labeled **13 Oct historical closing prices**, never as live quotes.
+**Build APK:** GitHub Actions → `Build MathFormula APK` → `MathFormula-debug-apk` artifact. Android 8.0+ / Java 17 / SDK 35.
 
-**Live:** enter an HTTPS backend URL with the `/v1/watchlist` contract documented in [docs/API.md](docs/API.md). The Android app validates timestamp freshness (<10 seconds), factor coverage, formula version, completed candle confirmation, VWAP, time-adjusted volume, market, spread/liquidity and net risk/reward. It only provides read-only research signals and does **not** place trades.
+**Run:** Settings → enter Groww TOTP Token and TOTP Secret → Save & Connect. Update NSE watchlist (max 20 symbols). Market-data refreshes while app is open every 5 minutes.
 
-**Formula weights:** fundamentals 27 + catalysts 23 + macro 19 + trading 31 = 100; score = sum of (fixed weight × normalized factor). Overnight available-factor score uses first 29 factors with normalization 100/91. **A score is not a calibrated probability. The 90% precision objective has NOT been verified.**
+**Important:** Groww only provides the price/volume part of the research. A full NSE overnight fundamental/macro/news scan and validated BUY signal require additional data. Until then the frozen 30-factor Alpha-30 model fails closed with **NO SIGNAL**; its 90% precision target is not validated.
 
-**Not included:** connected licensed broker streaming data, full-universe fundamentals/news feed, empirical backtest, always-on server scheduler, user authentication, broker trading or an investor-grade deployment. Connect these through the secure backend; do not put broker keys in the app.
+See [docs/GROWW.md](docs/GROWW.md) for usage and data safety.
