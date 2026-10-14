@@ -1,22 +1,29 @@
-# MathFormula — Alpha-30 v1.2.0 (Groww read-only)
+# MathFormula v1.3.0 — Alpha-30 NSE Research
 
-**Frozen mathematical model:** `Alpha30Engine.java` retains exactly the original 30 weighted factors, all gates and thresholds unchanged.
+## What changed
+Read-only Groww watchlist with:
+- **Live** view: observed prices, prior 20-session breakout resistance, freshness indicators, completed 5/15-minute confirmation and explicit next condition.
+- **Pre-close** view: watches selected stocks with attention to 14:45, 15:00, 15:15, 15:25 IST. The event date is **manually entered** and NOT a verified exchange filing.
+- **Runners & misses** view: observed peak return and drawdown since the *first valid quote captured on this device*. Flags first observations already up 10% as potential late discovery. This is not market-wide performance auditing.
+- Local audit history of state changes, missed watches and monitoring checkpoints.
+- Groww TOTP Token + Secret encrypted using Android Keystore; **zero order endpoints**, no broker keys committed.
+- Phone quotes every minute; 5-minute candle refresh on 5-minute boundaries. Android foreground data-sync service explicitly started by user.
+- At 2:30 PM the monitoring notification prompts the user to open MathFormula and tap **Renew close coverage** for the closing hour. This is only best effort because Android 15+ targets limit background `dataSync` service time.
 
-## What is new in v1.2
-- Explicitly user-started **Android foreground monitoring** service that continues when the app is sent to the background, with an ongoing notification.
-- **Market quotes every minute**, completed 5-minute candle evaluation at 5-minute boundaries; most recent completed 15-minute candle retained.
-- Watchlist candidates **remain displayed until manually removed**, including failed breakout and temporarily stale data.
-- Every stock shows: observed price and movement, last-trade timestamp, market-data last poll timestamp, **expected breakout** (max high over previous 20 completed NSE daily sessions), reference date, distance to breakout, stage and NEXT REQUIRED CONDITION.
-- WATCHING → NEAR BREAKOUT → BREAKOUT CROSSED → CONFIRMING → FULL MODEL PENDING; explicit DATA UNAVAILABLE/STALE/COVERAGE GAP states.
-- Local audit journal of stock state changes and fetch errors; background service heartbeat / coverage display. Opt-in alerts for breakout watch milestones, **not BUY recommendations**.
-- Direct Groww TOTP Token + Secret remains encrypted through Android Keystore, no keys in GitHub or APK, no order endpoints and no static trading IP.
+## Fixed formula
+`app/src/main/java/com/mathformula/alpha/Alpha30Engine.java` is unchanged, still `Alpha-30-v1.0`, 30 immutable weights (fundamentals 27, catalysts 23, macro 19, technical 31), the same score limits and gating. **A price breakout alone NEVER triggers BUY**. The 90% win goal is unproven.
 
-## Critical scope and reliability limitations
-1. This is **best-effort phone background monitoring**, NOT 24/7 guaranteed. Android 15+ `dataSync` foreground services have a 6-hour/24-hour limit; battery restrictions, network failures, Groww auth expiry, market holidays and user force-stop cause gaps. User must explicitly start monitoring while app is visible during NSE hours; monitoring stops at the session timeout or close.
-2. The phone monitors a user-defined **up to 20 NSE stocks**, not all approximately 4,000 symbols. A hosted server is required for complete overnight scanning, nonstop coverage and push alerts.
-3. Groww market data alone is insufficient to validate the remaining fundamentals, catalysts, macro factors and net trade target. The app deliberately returns **NO SIGNAL** even when it observes a breakout. A price breakout is not an executable BUY.
-4. Formula target 90% accuracy remains **unproven**. No orders can be placed.
-5. Android 13+ requests notification permission for breakout/watch alerts.
-6. The historical 20-day high is an **observed breakout level**, *not a predicted profit target*.
+## Known missing components
+A **full-universe** (all NSE instruments) overnight + intraday scanner, licensed price streaming, server infrastructure, real earnings calendar and timestamped filings, point-in-time fundamental/macro data, and calibrated execution targets are NOT included. The APK only monitors up to 20 user-defined symbols. No guaranteed unattended all-day coverage, no post-close filings collection and no order placement.
 
-Build using GitHub Actions workflow `Build MathFormula APK` on branch `feat/alpha30-android`. Download `MathFormula-debug-apk` artifact. See [Monitoring & UX Audit](docs/MONITORING_AND_UX_AUDIT.md) and [Groww](docs/GROWW.md).
+## Usage
+1. Install the APK; open Groww Settings; enter your private TOTP token and secret (do not commit or send them).
+2. Edit up to 20 NSE symbols.
+3. During NSE market hours, tap Start background; allow notifications.
+4. Check Live / Pre-close / Runners & misses; view Audit History for timestamps.
+5. For final hour Android coverage, open the app around 2:30 PM, tap Renew close coverage; independently verify the subsequent Last Scan timestamp.
+6. If quotes are old or feed unavailable, the app must show LAST OBSERVED / NO SIGNAL, not a BUY.
+
+Build: GitHub Actions workflow `Build MathFormula APK`; download `MathFormula-debug-apk`. Consult [the v1.3 user and refresh audit](docs/RELEASE_1_3.md).
+
+The debug build uses Android's debug signing identity; upgrading from an older APK with a different debug certificate may require an uninstall (device-local data may be lost).

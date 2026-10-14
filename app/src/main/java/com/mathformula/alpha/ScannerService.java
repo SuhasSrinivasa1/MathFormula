@@ -34,13 +34,14 @@ public final class ScannerService extends Service {
   public static final String STOP="com.mathformula.alpha.STOP_MONITOR";
   private static final String CHANNEL="alpha30_scan_v12";
   private static final ZoneId IST=ZoneId.of("Asia/Kolkata");
-  private static final long MAX_SESSION_MS=5L*60*60*1000+45L*60*1000; // 5h45m safety budget
+  private static final long MAX_SESSION_MS=5L*60*60*1000+55L*60*1000; // 5h45m safety budget
   private final Handler loop=new Handler(Looper.getMainLooper());
   private final ExecutorService work=Executors.newSingleThreadExecutor();
   private WatchStore store;
   private SecureGrowwStore vault;
   private GrowwReadOnlyClient client;
   private boolean busy=false,started=false;
+  private String lastReminderDay="";
   private long sessionStart;
   private final Runnable pulse=new Runnable() {
     @Override public void run(){
@@ -53,8 +54,20 @@ public final class ScannerService extends Service {
         halt("Outside supported NSE hours; monitoring stopped");
         return;
       }
+      if(MarketSchedule.preClose(System.currentTimeMillis()) &&
+         java.time.ZonedDateTime.now(IST).getHour()==14 &&
+         java.time.ZonedDateTime.now(IST).getMinute()>=30){
+        String today=java.time.LocalDate.now(IST).toString();
+        if(!today.equals(lastReminderDay)){
+          lastReminderDay=today;
+          store.audit("MONITOR","SESSION","ACTIVE","RENEWAL_REMINDER",
+            "Open MathFormula and tap Start background again for closing session coverage",0);
+          reminder("Closing-session coverage check",
+            "Open MathFormula and tap Start background to renew the Android monitoring session.");
+        }
+      }
       if(!busy)fetchCycle();
-      // Quote preview every minute; completed-candle confirmation every five minutes.
+      // Monitored-symbol quotes every minute; completed-candle checks every five minutes.
       long now=System.currentTimeMillis(), interval=60000L;
       long delay=interval-(now%interval)+3000L;
       loop.postDelayed(this,Math.max(3000L,delay));
@@ -93,7 +106,13 @@ public final class ScannerService extends Service {
   @Override public int onStartCommand(Intent intent,int flags,int startId){
     String action=intent==null?"":intent.getAction();
     if(STOP.equals(action)){halt("Stopped by user");return START_NOT_STICKY;}
-    if(started)return START_NOT_STICKY;
+    if(started){
+      // Explicit user interaction re-arms the local safety timer. Android OS limits still apply.
+      sessionStart=System.currentTimeMillis();
+      store.audit("MONITOR","SESSION","ACTIVE","USER_RENEWED",
+        "User reopened MathFormula to prioritize closing session; Android budget still applies",0);
+      return START_NOT_STICKY;
+    }
     if(!vault.configured()) {
       store.setEnabled(false);store.recordScan(false,"Groww credentials not configured",0);
       stopSelf();return START_NOT_STICKY;
@@ -153,8 +172,11 @@ public final class ScannerService extends Service {
             m.lastFiveClose=prior.optDouble("lastFiveClose",Double.NaN);
             m.lastFifteenClose=prior.optDouble("lastFifteenClose",Double.NaN);
           }
+          // Do not accept a completed 15m candle unless it CLOSED above resistance and average trade price.
+          boolean fifteenConfirmed=m.fifteenCount>0 && Double.isFinite(m.breakoutLevel) &&
+            Double.isFinite(m.lastFifteenClose) && m.lastFifteenClose>m.breakoutLevel && m.aboveVwap15;
           WatchState.Progress p=WatchState.decide(m.price,m.breakoutLevel,m.lastTradeMs,
-            now,true,m.two5m,m.fifteenCount>0,m.aboveVwap5&&m.aboveVwap15);
+            System.currentTimeMillis(),true,m.two5m,fifteenConfirmed,m.aboveVwap5&&m.aboveVwap15);
           String previous=store.get(symbol).optString("stage","");
           store.put(WatchState.json(m,p,System.currentTimeMillis()));
           if(p.fresh&&!p.stage.equals(previous)&&
@@ -168,6 +190,20 @@ public final class ScannerService extends Service {
         }
       }
       boolean okay=success==symbols.size()&&success>0;
+      if(MarketSchedule.checkpoint(System.currentTimeMillis())){
+        StringBuilder shortlist=new StringBuilder();
+        for(String symbol:symbols){
+          org.json.JSONObject j=store.get(symbol);
+          String stage=j.optString("stage","NO DATA");
+          if(shortlist.length()>0)shortlist.append(" | ");
+          shortlist.append(symbol).append(": ").append(stage);
+          String event=store.earningsDate(symbol);
+          if(MarketSchedule.dueSoon(event,System.currentTimeMillis()))shortlist.append(" · MANUAL earnings tag ").append(event);
+        }
+        String label=MarketSchedule.checkpointLabel(System.currentTimeMillis());
+        store.recordPreClose(label,shortlist.toString());
+        reminder("Pre-close watch · "+label,"Updated watched symbols. Check MathFormula; not a BUY signal.");
+      }
       store.recordScan(okay,okay?"":lastFailure,success);
       Intent changed=new Intent(WatchStore.ACTION);changed.setPackage(getPackageName());
       sendBroadcast(changed);
@@ -177,6 +213,17 @@ public final class ScannerService extends Service {
       }
       busy=false;
     });
+  }
+  private void reminder(String title,String body){
+    if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=
+      android.content.pm.PackageManager.PERMISSION_GRANTED)return;
+    PendingIntent open=PendingIntent.getActivity(this,781,new Intent(this,MainActivity.class),
+      PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
+    Notification msg=new Notification.Builder(this,"alpha30_breakouts_v12")
+      .setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle(title)
+      .setContentText(body).setContentIntent(open).setAutoCancel(true).build();
+    NotificationManager manager=getSystemService(NotificationManager.class);
+    if(manager!=null)manager.notify(7102,msg);
   }
   private void notifyWatch(String symbol,String stage,GrowwReadOnlyClient.Market m){
     if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
@@ -194,6 +241,7 @@ public final class ScannerService extends Service {
     if(manager!=null)manager.notify(100000+Math.abs(symbol.hashCode()%10000),alert);
   }
   private void halt(String reason){
+    if(started)reminder("Monitoring stopped · coverage gap",reason);
     started=false;loop.removeCallbacks(pulse);store.setEnabled(false);
     store.audit("MONITOR","SESSION","ACTIVE","STOPPED",reason,0);
     store.recordScan(false,reason,0);

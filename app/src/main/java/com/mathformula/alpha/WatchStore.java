@@ -18,17 +18,63 @@ final class WatchStore {
   private final Context context;
   private final SharedPreferences p;
   WatchStore(Context c){context=c.getApplicationContext();p=context.getSharedPreferences(PREF,Context.MODE_PRIVATE);}
-  void put(JSONObject j) {
+  /** Preserve discovery baseline, observed peak and last quote across refreshed watch cards. */
+  synchronized void put(JSONObject j) {
     String symbol=j.optString("symbol","");
     if(!symbol.matches("[A-Z0-9&-]{1,26}"))return;
-    String before=p.getString("stock_"+symbol,"");
+    JSONObject prev=get(symbol);
+    String past=prev.optString("stage","");
+    long now=System.currentTimeMillis();
+    double quote=j.optDouble("price",Double.NaN);
+    long exchangeMs=j.optLong("tradeMs",0);
+    boolean valid=Double.isFinite(quote)&&quote>0&&
+       MarketSchedule.isCurrentQuote(exchangeMs,now);
+    try {
+      double first=prev.optDouble("firstObservedPrice",Double.NaN);
+      long firstMs=prev.optLong("firstObservedMs",0);
+      double peak=prev.optDouble("peakObservedPrice",Double.NaN);
+      if(valid){
+        if(!Double.isFinite(first)||first<=0){first=quote;firstMs=now;}
+        if(!Double.isFinite(peak)||quote>peak)peak=quote;
+      }
+      if(Double.isFinite(first)&&first>0){
+        j.put("firstObservedPrice",first);j.put("firstObservedMs",firstMs);
+        j.put("peakObservedPrice",peak);
+        j.put("runnerPct",Double.isFinite(quote)?100*(quote/first-1):JSONObject.NULL);
+        j.put("peakRunnerPct",100*(peak/first-1));
+        j.put("drawdownFromObservedPeakPct",
+          Double.isFinite(quote)&&peak>0?100*(quote/peak-1):JSONObject.NULL);
+      }
+      boolean late=prev.optBoolean("firstSeenAfterTenPct",false);
+      double change=j.optDouble("changePct",Double.NaN);
+      if(prev.length()==0&&valid&&Double.isFinite(change)&&change>=10){
+        late=true;
+        audit("LATE_DISCOVERY",symbol,"NOT OBSERVED","FIRST SEEN >10%",
+          "First observation already >=10% above previous close; not a proven missed BUY",exchangeMs);
+      }
+      j.put("firstSeenAfterTenPct",late);
+    } catch(Exception ignored){}
     p.edit().putString("stock_"+symbol,j.toString())
-      .putLong("lastUpdated",System.currentTimeMillis()).apply();
-    JSONObject prev=null;try{prev=new JSONObject(before);}catch(Exception ignored){}
-    String past=prev==null?"":prev.optString("stage","");
+      .putLong("lastUpdated",now).apply();
     String current=j.optString("stage","");
-    if(!current.equals(past))audit("STATE",symbol,past.isEmpty()?"INITIAL":past,current,j.optString("next",""),j.optLong("tradeMs",0));
+    if(!current.equals(past))audit("STATE",symbol,past.isEmpty()?"INITIAL":past,
+      current,j.optString("next",""),exchangeMs);
   }
+  void setEarningsDate(String symbol,String day){
+    if(!symbol.matches("[A-Z0-9&-]{1,26}"))return;
+    if(!day.isEmpty())java.time.LocalDate.parse(day);
+    p.edit().putString("earnings_"+symbol,day).apply();
+    audit("EVENT",symbol,"MANUAL","UPDATED",day.isEmpty()?"Earnings date cleared":
+      "User-entered earnings date "+day+"; NOT verified NSE filing",0);
+  }
+  String earningsDate(String symbol){return p.getString("earnings_"+symbol,"");}
+  void recordPreClose(String label,String candidates){
+    p.edit().putLong("lastPreClose",System.currentTimeMillis())
+      .putString("precloseSummary",candidates).apply();
+    audit("PRE_CLOSE","WATCHLIST","",label,candidates,0);
+  }
+  long lastPreClose(){return p.getLong("lastPreClose",0);}
+  String precloseSummary(){return p.getString("precloseSummary","No pre-close checkpoint observed yet");}
   JSONObject get(String symbol) {
     try{return new JSONObject(p.getString("stock_"+symbol,"{}"));}
     catch(Exception e){return new JSONObject();}

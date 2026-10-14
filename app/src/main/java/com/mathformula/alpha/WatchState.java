@@ -47,6 +47,8 @@ final class WatchState {
     j.put("volume",safe(m.dayVolume));j.put("vwap",safe(m.vwap));
     j.put("spreadBps",safe(m.spreadBps));j.put("fiveCount",m.fiveCount);
     j.put("fifteenCount",m.fifteenCount);j.put("two5m",m.two5m);
+    j.put("fifteenConfirmed",m.fifteenCount>0 && Double.isFinite(m.breakoutLevel) &&
+      Double.isFinite(m.lastFifteenClose) && m.lastFifteenClose>m.breakoutLevel && m.aboveVwap15);
     j.put("aboveVwap5",m.aboveVwap5);j.put("aboveVwap15",m.aboveVwap15);
     j.put("lastFiveClose",safe(m.lastFiveClose));j.put("lastFifteenClose",safe(m.lastFifteenClose));
     j.put("stage",p.stage);j.put("next",p.next);j.put("gapPct",safe(p.gapPct));
