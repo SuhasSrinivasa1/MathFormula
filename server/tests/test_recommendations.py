@@ -5,7 +5,7 @@ from mathformula.recommendations import (
     evaluate,read_factors,record_discovery,reevaluate,response_rows)
 from mathformula.storage import db,import_execution_evidence
 
-NOW=1791978000000
+NOW=1791954000000
 def quote(trade=NOW,price=105):
     return {"trade_ms":trade,"price":price}
 def gates(t=NOW):
@@ -32,6 +32,22 @@ class GateEvaluation(unittest.TestCase):
     def test_missing_execution_evidence(self):
         x=evaluate([1.0]*30,quote(),None,100,NOW,True)
         self.assertEqual(x["decision"],"NO_SIGNAL")
+    def test_pdf_g12_early_and_late_cutoff(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        ist=ZoneInfo("Asia/Kolkata")
+        for hour,minute in [(9,29),(14,45),(15,10)]:
+            at=int(datetime(2026,10,14,hour,minute,tzinfo=ist).timestamp()*1000)
+            output=evaluate([1.0]*30,quote(at),gates(at),100,at,True)
+            self.assertNotEqual(output["decision"],"BUY_ELIGIBLE")
+            self.assertTrue(any("09:30" in msg for msg in output["reasons"]))
+    def test_pdf_overnight_weighted_denominator(self):
+        from mathformula.alpha30 import score
+        self.assertEqual(score([1.0]*29+[None],overnight=True)["score"],100)
+        self.assertEqual(score([1.0]*29+[None],overnight=True)["coveragePct"],100)
+        missing=[1.0]*30
+        missing[26]=None
+        self.assertLess(score(missing,overnight=True)["coveragePct"],100)
     def test_market_closed_never_buy(self):
         self.assertEqual(evaluate([1.0]*30,quote(),gates(),100,NOW,False)["decision"],"NO_SIGNAL")
     def test_gate_failure_wait(self):
