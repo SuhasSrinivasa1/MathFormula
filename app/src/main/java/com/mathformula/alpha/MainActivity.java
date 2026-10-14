@@ -44,6 +44,12 @@ public final class MainActivity extends Activity {
   private SecureGrowwStore vault;
   private GrowwReadOnlyClient client;
   private WatchStore watchStore;
+  private EditText growwTokenInput, growwSecretInput;
+  private boolean growwChecking=false;
+  private String growwConnectionMessage="";
+  private static final long AUTH_FRESH_MS=15*60_000L;
+  private static final String KEY_VERIFIED_AT="groww_verified_at_v22";
+  private static final String KEY_LAST_TRADE="groww_verified_last_trade_v22";
   private final BroadcastReceiver scanReceiver=new BroadcastReceiver(){
     @Override public void onReceive(Context c,Intent intent){render();}
   };
@@ -108,10 +114,8 @@ public final class MainActivity extends Activity {
     page.setPadding(dp(19),dp(24),dp(19),dp(30));scroll.addView(page);setContentView(scroll);render();
   }
   @Override protected void onResume(){
-    super.onResume();IntentFilter filter=new IntentFilter(WatchStore.ACTION);
-    if(Build.VERSION.SDK_INT>=33)registerReceiver(scanReceiver,filter,Context.RECEIVER_NOT_EXPORTED);
-    else registerReceiver(scanReceiver,filter);
-    handler.postDelayed(fiveMinute,500);
+    super.onResume();
+    // Do not redraw input controls on a timer while the user enters credentials.
   }
   @Override protected void onPause(){handler.removeCallbacks(fiveMinute);
     try{unregisterReceiver(scanReceiver);}catch(Exception ignored){}
@@ -171,78 +175,203 @@ public final class MainActivity extends Activity {
     }
     return result;
   }
-  /** Settings is a focused, non-trading configuration screen. */
+  private long lastVerified(){
+    return getPreferences(MODE_PRIVATE).getLong(KEY_VERIFIED_AT,0L);
+  }
+  private boolean verifiedRecently(){
+    long age=System.currentTimeMillis()-lastVerified();
+    return vault.configured() && age>=0 && age<=AUTH_FRESH_MS;
+  }
+  private EditText passwordField(String placeholder){
+    EditText e=new EditText(this);
+    e.setSingleLine(true);
+    e.setTextSize(14);
+    e.setTextColor(INK);
+    e.setHintTextColor(MUTED);
+    e.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
+    e.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
+    e.setSaveEnabled(false);
+    e.setPadding(dp(12),dp(14),dp(12),dp(14));
+    e.setBackground(background(Color.rgb(245,248,252),11));
+    e.setHint(placeholder);
+    return e;
+  }
+  /** Only save encrypted values; never show credentials or imply authentication. */
+  private boolean saveInlineCredentials(){
+    String token=growwTokenInput==null?"":growwTokenInput.getText().toString().trim();
+    String secret=growwSecretInput==null?"":growwSecretInput.getText().toString().trim();
+    boolean changed=!token.isEmpty()||!secret.isEmpty();
+    try{
+      if(!secret.isEmpty())TotpUtil.base32(secret);
+      if(token.isEmpty()&&vault.get("totp_token").isEmpty()){
+        growwConnectionMessage="Enter your Groww TOTP token";
+        render();return false;
+      }
+      if(secret.isEmpty()&&vault.get("totp_secret").isEmpty()){
+        growwConnectionMessage="Enter your Groww TOTP secret";
+        render();return false;
+      }
+      if(!token.isEmpty())vault.put("totp_token",token);
+      if(!secret.isEmpty())vault.put("totp_secret",secret);
+      if(changed){
+        client.resetSession();
+        getPreferences(MODE_PRIVATE).edit().remove(KEY_VERIFIED_AT).remove(KEY_LAST_TRADE).apply();
+      }
+      growwConnectionMessage=changed?"Credentials encrypted and saved · verify using Refresh & Connect":
+        "Saved credentials retained · use Refresh & Connect to verify access";
+      return true;
+    }catch(Exception ex){
+      growwConnectionMessage="Unable to validate or securely store Groww credentials";
+      render();return false;
+    }
+  }
+  private void saveGroww(){
+    if(saveInlineCredentials())render();
+  }
+  /** A green check requires a successful authenticated Groww market-data API call. */
+  private void refreshGrowwConnection(){
+    if(growwChecking)return;
+    if(!saveInlineCredentials())return;
+    growwChecking=true;
+    growwConnectionMessage="Authenticating and requesting Groww market data…";
+    render();
+    worker.execute(()->{
+      String problem="";
+      long tradeAt=0;
+      try{
+        // RELIANCE is used only to confirm read-only NSE cash market-data access.
+        // A historical last-trade timestamp after close is not a live quote.
+        GrowwReadOnlyClient.Market check=client.quote("RELIANCE");
+        if(!Double.isFinite(check.price)||check.price<=0)
+          throw new IllegalStateException("Groww returned no usable NSE cash quote");
+        tradeAt=check.lastTradeMs;
+      }catch(SecurityException e){
+        problem="Groww authentication rejected · check TOTP token and secret";
+      }catch(Exception e){
+        String lower=e.getMessage()==null?"":e.getMessage().toLowerCase(Locale.US);
+        problem=lower.contains("cooldown")?"Groww authentication cooldown · retry after one minute":
+          lower.contains("429")||lower.contains("rate limit")?
+            "Groww rate limit reached · retry after cooldown":
+          "Groww connection could not be verified · check network and credentials";
+      }
+      final String failure=problem;final long lastTrade=tradeAt;
+      handler.post(()->{
+        growwChecking=false;
+        if(failure.isEmpty()){
+          getPreferences(MODE_PRIVATE).edit()
+            .putLong(KEY_VERIFIED_AT,System.currentTimeMillis())
+            .putLong(KEY_LAST_TRADE,lastTrade).apply();
+          growwConnectionMessage="Groww authenticated · read-only API response verified";
+        }else{
+          getPreferences(MODE_PRIVATE).edit().remove(KEY_VERIFIED_AT).apply();
+          growwConnectionMessage=failure;
+        }
+        render();
+      });
+    });
+  }
+  /** Inline, accessible Groww connection settings. No second server login required for Groww data. */
   private void render(){
+    if(page==null)return;
     page.removeAllViews();
-    TextView title=text("Settings",28,INK,true);
-    page.addView(title);
-    gap(page,5);
-    page.addView(text("MATHFORMULA v2.0  ·  RESEARCH ONLY",11,BLUE,true));
-    gap(page,18);
-    LinearLayout account=card();
-    account.addView(text("Connections",19,INK,true));
-    gap(account,7);
-    account.addView(text("Groww market data",14,INK,true));
-    account.addView(text(vault.configured()?"Encrypted credentials configured":
-      "Not connected · credentials required for NSE discovery",
-      12,vault.configured()?GREEN:AMBER,false));
-    gap(account,10);
-    account.addView(btn(vault.configured()?"Manage Groww credentials":"Connect Groww securely",
-      this::settings),new LinearLayout.LayoutParams(-1,dp(46)));
-    gap(account,15);
-    account.addView(text("Independent NSE scanner",14,INK,true));
-    account.addView(text(serverUrl().isEmpty()?"Not configured · server-side scanning unavailable":
-      "HTTPS endpoint configured · verify deployment and data coverage",
-      12,serverUrl().isEmpty()?AMBER:MUTED,false));
-    gap(account,10);
-    account.addView(btn("Configure server connection",this::editServer),
-      new LinearLayout.LayoutParams(-1,dp(46)));
+    page.addView(text("Settings",28,INK,true));
+    gap(page,4);
+    page.addView(text("MATHFORMULA v2.2  ·  ALPHA-30 RESEARCH",11,BLUE,true));
+    gap(page,17);
+    LinearLayout connection=card();
+    connection.addView(text("Groww connection",19,INK,true));
+    gap(connection,9);
+    String label;
+    int stateColor;
+    if(growwChecking){label="◌ Checking Groww authentication";stateColor=AMBER;}
+    else if(verifiedRecently()){label="✓ Groww authenticated";stateColor=GREEN;}
+    else if(!vault.configured()){label="○ Groww credentials not configured";stateColor=AMBER;}
+    else if(lastVerified()>0){label="◷ Previously authenticated · verify again";stateColor=AMBER;}
+    else {label="○ Credentials saved · not yet authenticated";stateColor=AMBER;}
+    connection.addView(text(label,15,stateColor,true));
+    if(lastVerified()>0){
+      gap(connection,4);
+      connection.addView(text("Last successful API verification: "+clock(lastVerified()),
+        11,MUTED,false));
+      long exchangeAt=getPreferences(MODE_PRIVATE).getLong(KEY_LAST_TRADE,0);
+      if(exchangeAt>0){
+        connection.addView(text("Quote exchange time: "+clock(exchangeAt)+
+          " · may be old outside NSE hours",11,MUTED,false));
+      }
+    }
+    if(!growwConnectionMessage.isEmpty()){
+      gap(connection,7);
+      connection.addView(text(growwConnectionMessage,12,
+        verifiedRecently()?GREEN:AMBER,false));
+    }
+    gap(connection,14);
+    connection.addView(text("Groww TOTP token",13,INK,true));
+    gap(connection,5);
+    growwTokenInput=passwordField(vault.get("totp_token").isEmpty()?
+      "Enter Groww TOTP token":"Saved securely · leave blank to keep");
+    connection.addView(growwTokenInput,new LinearLayout.LayoutParams(-1,dp(53)));
+    gap(connection,13);
+    connection.addView(text("Groww TOTP secret",13,INK,true));
+    gap(connection,5);
+    growwSecretInput=passwordField(vault.get("totp_secret").isEmpty()?
+      "Enter Base32 TOTP secret":"Saved securely · leave blank to keep");
+    connection.addView(growwSecretInput,new LinearLayout.LayoutParams(-1,dp(53)));
+    gap(connection,6);
+    connection.addView(text("Fields are masked. Saved values stay encrypted on this device; empty fields preserve saved values.",11,MUTED,false));
+    gap(connection,14);
+    LinearLayout actions=new LinearLayout(this);
+    actions.setOrientation(LinearLayout.HORIZONTAL);
+    Button save=btn("Save",this::saveGroww);
+    Button connect=btn(growwChecking?"Checking…":"↻ Refresh & Connect",this::refreshGrowwConnection);
+    save.setEnabled(!growwChecking);connect.setEnabled(!growwChecking);
+    LinearLayout.LayoutParams one=new LinearLayout.LayoutParams(0,dp(48),1);
+    one.rightMargin=dp(9);
+    actions.addView(save,one);
+    actions.addView(connect,new LinearLayout.LayoutParams(0,dp(48),2));
+    connection.addView(actions);
     gap(page,2);
     LinearLayout alerts=card();
-    alerts.addView(text("Monitoring & notifications",19,INK,true));
-    gap(alerts,8);
-    alerts.addView(text(ResearchAlerts.permission(this)?"Android notifications enabled":
-      "Android notifications disabled",13,INK,true));
+    alerts.addView(text("Monitoring & notifications",18,INK,true));
+    gap(alerts,7);
+    alerts.addView(text(ResearchAlerts.permission(this)?
+      "✓ Android notifications enabled":"○ Android notifications disabled",13,
+      ResearchAlerts.permission(this)?GREEN:AMBER,true));
     gap(alerts,5);
-    alerts.addView(text("Phone alerts are best effort; push messages while the app is closed require a deployed server and push channel. No unverified BUY alerts.",12,MUTED,false));
-    gap(alerts,10);
-    alerts.addView(text("Last alert review: "+clock(ResearchAlerts.lastCheck(this)),11,MUTED,false));
-    gap(alerts,10);
-    alerts.addView(text(watchStore.enabled()?
-      "On-device monitoring: running on best effort":"On-device monitoring: stopped",12,INK,false));
+    alerts.addView(text("Research alerts use direct Groww market data. Phone monitoring is best-effort and can stop in the background. No unverified BUY signals.",12,MUTED,false));
+    gap(alerts,7);
+    alerts.addView(text("Last research alert evaluation: "+clock(ResearchAlerts.lastCheck(this)),11,MUTED,false));
     gap(alerts,9);
     alerts.addView(btn(watchStore.enabled()?"Restart phone monitoring":"Start phone monitoring",
-      this::startMonitoring),new LinearLayout.LayoutParams(-1,dp(46)));
+      this::startMonitoring),new LinearLayout.LayoutParams(-1,dp(45)));
     if(watchStore.enabled()){
       gap(alerts,7);
       alerts.addView(btn("Stop phone monitoring",this::stopMonitoring),
-        new LinearLayout.LayoutParams(-1,dp(42)));
+        new LinearLayout.LayoutParams(-1,dp(41)));
     }
     gap(page,2);
-    LinearLayout preferences=card();
-    preferences.addView(text("Research preferences",19,INK,true));gap(preferences,7);
-    preferences.addView(text("The frozen Alpha-30 model is not editable from this screen.",12,MUTED,false));
-    gap(preferences,10);
-    preferences.addView(btn("View all 30 model factors",this::showFactors),
-      new LinearLayout.LayoutParams(-1,dp(46)));
+    LinearLayout preference=card();
+    preference.addView(text("Research preferences",18,INK,true));
+    gap(preference,6);
+    preference.addView(text("Frozen Alpha-30 model · unchanged 30 factors",12,MUTED,false));
+    gap(preference,9);
+    preference.addView(btn("View all 30 model factors",this::showFactors),
+      new LinearLayout.LayoutParams(-1,dp(43)));
     gap(page,2);
     LinearLayout privacy=card();
-    privacy.addView(text("Privacy & diagnostics",19,INK,true));gap(privacy,8);
-    privacy.addView(text("Credentials are encrypted in Android Keystore. Quotes and research events are stored locally. MathFormula is read-only and never places orders.",12,MUTED,false));
-    gap(privacy,10);
+    privacy.addView(text("Privacy & diagnostics",18,INK,true));
+    gap(privacy,7);
+    privacy.addView(text("Read-only Groww integration · no order placement · encrypted Android Keystore storage.",12,MUTED,false));
+    gap(privacy,9);
     privacy.addView(btn("Export sanitized diagnostics",this::exportLogs),
-      new LinearLayout.LayoutParams(-1,dp(46)));
+      new LinearLayout.LayoutParams(-1,dp(43)));
     gap(privacy,7);
     privacy.addView(btn("View local audit",this::showAudit),
-      new LinearLayout.LayoutParams(-1,dp(42)));
-    gap(page,5);
-    page.addView(text("Data health: "+(vault.configured()?"Groww configured":"Feed not connected")+
-      " · Scanner "+(serverUrl().isEmpty()?"not deployed":"endpoint set"),11,MUTED,false));
-    gap(page,6);
-    page.addView(text("Research watches are not investment advice or verified BUY recommendations. Market data can be stale, delayed, or unavailable.",11,AMBER,false));
-    gap(page,13);
+      new LinearLayout.LayoutParams(-1,dp(43)));
+    gap(page,4);
+    page.addView(text("Groww provides market data, not every required financial, news and macro factor. Until those are verified, opportunities remain research-only.",11,AMBER,false));
+    gap(page,12);
     page.addView(btn("← Back to recommendations",this::finish),
-      new LinearLayout.LayoutParams(-1,dp(44)));
+      new LinearLayout.LayoutParams(-1,dp(43)));
   }
 
   private void drawSaved(String symbol,JSONObject j){
