@@ -333,32 +333,58 @@ final class LocalDiscovery {
         Broad b=broad.get(i);checked++;
         progress.update("Verifying breakout history "+checked+" / "+toVerify);
         try{
-          GrowwReadOnlyClient.History h=groww.history60(b.symbol);
-          if(h.averageValue20<10_000_000 || h.high20<=0)continue;
-          GrowwReadOnlyClient.Market q=groww.quote(b.symbol);
-          long observed=System.currentTimeMillis();
-          if(q.lastTradeMs<=0||q.lastTradeMs>observed+3000||
-              observed-q.lastTradeMs>60_000L)continue;
-          if(!Double.isFinite(q.price)||q.price<=0)continue;
-          double distance=100*(q.price/h.high20-1);
-          if(distance< -2.5||distance>4.0)continue;
-          double daily=100*(q.price/h.previousClose-1);
-          if(daily>8.0||daily<0.25)continue;
-          double nearBonus=30*clamp(1-Math.abs(distance)/4.,0,1);
-          double strength=40*clamp(daily/5.,0,1)+30*b.location+nearBonus;
-          String stage=distance>=0?"BREAKOUT WATCH":distance>=-1.5?"NEAR BREAKOUT":"WATCHING";
-          JSONObject item=new JSONObject()
-            .put("symbol",b.symbol).put("price",q.price)
-            .put("dayChangePct",daily).put("fromOpenPct",b.move)
-            .put("breakoutLevel",h.high20).put("distancePct",distance)
-            .put("stage",stage).put("preliminaryRank",strength)
-            .put("priorDataAsOf",h.asOf).put("completedSessions",h.sessions)
-            .put("approxAverageTradedValue20Inr",h.averageValue20)
-            .put("liquidityValueEstimated",true).put("volume",q.dayVolume)
-            .put("averageTradePrice",q.vwap).put("tradeMs",q.lastTradeMs)
-            .put("observedMs",observed).put("status","RESEARCH ONLY")
-            .put("signal","NO SIGNAL")
-            .put("why","30-factor fundamentals, catalysts, macro and execution gates not verified");
+          JSONObject item;
+          if(afterHours){
+            GrowwReadOnlyClient.NextSessionHistory h=groww.nextSessionHistory(b.symbol);
+            if(h.avgValue20<10_000_000||h.priorHigh20<=0||h.previousClose<=0)continue;
+            double distance=100*(h.close/h.priorHigh20-1);
+            double daily=100*(h.close/h.previousClose-1);
+            double location=clamp((h.close-h.low)/Math.max(.01,h.high-h.low),0,1);
+            if(distance< -2.5||distance>4.0||daily<0.25||daily>8.0||location<.55)continue;
+            double strength=40*clamp(daily/5.,0,1)+30*location+
+              30*clamp(1-Math.abs(distance)/4.,0,1);
+            item=new JSONObject().put("symbol",b.symbol).put("price",h.close)
+              .put("priceKind","LAST_COMPLETED_SESSION_CLOSE_NOT_LIVE")
+              .put("priceAsOfSession",h.sessionDate).put("dayChangePct",daily)
+              .put("fromOpenPct",100*(h.close/h.open-1))
+              .put("breakoutLevel",h.priorHigh20).put("distancePct",distance)
+              .put("stage","NEXT SESSION WATCH").put("preliminaryRank",strength)
+              .put("priorDataAsOf",h.sessionDate).put("completedSessions",h.completedSessions)
+              .put("approxAverageTradedValue20Inr",h.avgValue20)
+              .put("liquidityValueEstimated",true).put("volume",h.volume)
+              .put("relativeVolume20",h.avgVolume20>0?h.volume/h.avgVolume20:JSONObject.NULL)
+              .put("tradeMs",0).put("dailyCandleMs",h.candleMs)
+              .put("observedMs",System.currentTimeMillis())
+              .put("status","NEXT_SESSION_RESEARCH").put("signal","NO SIGNAL")
+              .put("why","Prior session technical shortlist; complete Alpha-30 and live entry gates pending");
+          }else{
+            GrowwReadOnlyClient.History h=groww.history60(b.symbol);
+            if(h.averageValue20<10_000_000 || h.high20<=0)continue;
+            GrowwReadOnlyClient.Market q=groww.quote(b.symbol);
+            long observed=System.currentTimeMillis();
+            if(q.lastTradeMs<=0||q.lastTradeMs>observed+3000||
+                observed-q.lastTradeMs>60_000L)continue;
+            if(!Double.isFinite(q.price)||q.price<=0)continue;
+            double distance=100*(q.price/h.high20-1);
+            if(distance< -2.5||distance>4.0)continue;
+            double daily=100*(q.price/h.previousClose-1);
+            if(daily>8.0||daily<0.25)continue;
+            double nearBonus=30*clamp(1-Math.abs(distance)/4.,0,1);
+            double strength=40*clamp(daily/5.,0,1)+30*b.location+nearBonus;
+            String stage=distance>=0?"BREAKOUT WATCH":distance>=-1.5?"NEAR BREAKOUT":"WATCHING";
+            item=new JSONObject()
+              .put("symbol",b.symbol).put("price",q.price)
+              .put("dayChangePct",daily).put("fromOpenPct",b.move)
+              .put("breakoutLevel",h.high20).put("distancePct",distance)
+              .put("stage",stage).put("preliminaryRank",strength)
+              .put("priorDataAsOf",h.asOf).put("completedSessions",h.sessions)
+              .put("approxAverageTradedValue20Inr",h.averageValue20)
+              .put("liquidityValueEstimated",true).put("volume",q.dayVolume)
+              .put("averageTradePrice",q.vwap).put("tradeMs",q.lastTradeMs)
+              .put("observedMs",observed).put("status","RESEARCH ONLY")
+              .put("signal","NO SIGNAL")
+              .put("why","30-factor fundamentals, catalysts, macro and execution gates not verified");
+          }
           candidates.add(item);valid++;
         }catch(SecurityException auth){throw auth;}
          catch(Exception invalid){ /* intentionally not promoted to a validated candidate */ }
@@ -378,7 +404,11 @@ final class LocalDiscovery {
          .put("batchesFailed",failedBatches).put("broadCandidates",broad.size())
          .put("dailyHistoryVerified",checked).put("eligibleForResearch",valid)
          .put("scanCompleteness","Partial: individual histories verified only for leading "+checked)
-         .put("reason","Technical discovery ranking, NOT Alpha-30 BUY")
+         .put("reason",afterHours?
+            "Next-session shortlist from completed daily evidence; not a live BUY":
+            "Technical discovery ranking, NOT Alpha-30 BUY")
+         .put("scanMode",afterHours?"NEXT_SESSION_RESEARCH":"INTRADAY_RESEARCH")
+         .put("priceStatus",afterHours?"LAST_COMPLETED_SESSION_NOT_LIVE":"INTRADAY_OBSERVED")
          .put("top",top);
       save(result);
       return result;
