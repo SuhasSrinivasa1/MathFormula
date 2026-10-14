@@ -71,6 +71,30 @@ final class GrowwQuota {
       blockedUntil=Math.max(blockedUntil,SystemClock.elapsedRealtime()+75000);
     }
   }
+  static org.json.JSONObject policy() throws org.json.JSONException {
+    return new org.json.JSONObject()
+      .put("publishedLiveRequestsPerSecond",10)
+      .put("publishedLiveRequestsPerMinute",300)
+      .put("internalLiveRequestsPerSecond",LIVE_SECOND)
+      .put("internalLiveRequestsPerMinute",LIVE_MINUTE)
+      .put("internalAuthRequestsPerDay",AUTH_DAY)
+      .put("historicalInternalRequestsPerMinute",45)
+      .put("externalAppsIncluded",false);
+  }
+  static org.json.JSONObject counters() throws org.json.JSONException {
+    synchronized(LOCK){
+      long now=SystemClock.elapsedRealtime();
+      while(!liveSecond.isEmpty()&&now-liveSecond.peekFirst()>=1000)liveSecond.removeFirst();
+      while(!liveMinute.isEmpty()&&now-liveMinute.peekFirst()>=60000)liveMinute.removeFirst();
+      while(!historicalMinute.isEmpty()&&now-historicalMinute.peekFirst()>=60000)
+        historicalMinute.removeFirst();
+      return new org.json.JSONObject()
+        .put("liveLastSecond",liveSecond.size())
+        .put("liveLastMinute",liveMinute.size())
+        .put("historicalLastMinute",historicalMinute.size())
+        .put("cooldownRemainingMs",Math.max(0,blockedUntil-now));
+    }
+  }
   static String status(){
     synchronized(LOCK){
       long now=SystemClock.elapsedRealtime();
