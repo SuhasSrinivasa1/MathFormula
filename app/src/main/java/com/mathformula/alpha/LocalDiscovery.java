@@ -27,6 +27,7 @@ final class LocalDiscovery {
   private final SharedPreferences prefs;
   private final SharedPreferences historyCache;
   private JSONObject universeDiagnostics=new JSONObject();
+  private final Map<String,String> seriesBySymbol=new HashMap<>();
   interface Progress { void update(String message); }
   static final class Broad {
     String symbol;double price,open,high,low,move,location,rank;
@@ -298,6 +299,7 @@ final class LocalDiscovery {
       }finally{conn.disconnect();if(temp.exists())temp.delete();}
     }
     List<String> stocks=new ArrayList<>();
+    seriesBySymbol.clear();
     Set<String> unique=new HashSet<>();
     int nseCash=0,excludedNonEquity=0,excludedSeries=0,missingSymbol=0;
     Map<String,Integer> acceptedSeries=new TreeMap<>();
@@ -329,7 +331,7 @@ final class LocalDiscovery {
         String s=row.get(symbol).trim().toUpperCase(Locale.US);
         if(!s.matches("[A-Z0-9&-]{1,26}")){missingSymbol++;continue;}
         if(unique.add(s)){
-          stocks.add(s);
+          stocks.add(s);seriesBySymbol.put(s,ser);
           acceptedSeries.put(ser,acceptedSeries.getOrDefault(ser,0)+1);
         }
         if(stocks.size()>8500)throw new IOException("Unexpectedly large NSE universe");
@@ -485,6 +487,7 @@ final class LocalDiscovery {
               .put("priceAsOfSession",h.sessionDate).put("dayChangePct",daily)
               .put("fromOpenPct",100*(h.close/h.open-1))
               .put("breakoutLevel",h.priorHigh20).put("distancePct",distance)
+              .put("nseSeries",seriesBySymbol.getOrDefault(b.symbol,"UNKNOWN"))
               .put("stage","NEXT SESSION WATCH").put("preliminaryRank",strength)
               .put("priorDataAsOf",h.sessionDate).put("completedSessions",h.completedSessions)
               .put("approxAverageTradedValue20Inr",h.avgValue20)
@@ -523,6 +526,7 @@ final class LocalDiscovery {
               .put("symbol",b.symbol).put("price",q.price)
               .put("dayChangePct",daily).put("fromOpenPct",b.move)
               .put("breakoutLevel",h.high20).put("distancePct",distance)
+              .put("nseSeries",seriesBySymbol.getOrDefault(b.symbol,"UNKNOWN"))
               .put("stage",stage).put("preliminaryRank",strength)
               .put("priorDataAsOf",h.asOf).put("completedSessions",h.sessions)
               .put("approxAverageTradedValue20Inr",h.averageValue20)
