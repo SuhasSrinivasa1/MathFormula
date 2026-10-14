@@ -25,6 +25,8 @@ final class LocalDiscovery {
   private static final AtomicBoolean RUNNING=new AtomicBoolean(false);
   private final Context app;
   private final SharedPreferences prefs;
+  private final SharedPreferences historyCache;
+  private JSONObject universeDiagnostics=new JSONObject();
   interface Progress { void update(String message); }
   static final class Broad {
     String symbol;double price,open,high,low,move,location,rank;
@@ -32,6 +34,7 @@ final class LocalDiscovery {
   LocalDiscovery(Context c){
     app=c.getApplicationContext();
     prefs=app.getSharedPreferences(PREF,Context.MODE_PRIVATE);
+    historyCache=app.getSharedPreferences("mathformula_eod_cache_v26",Context.MODE_PRIVATE);
   }
   JSONObject latest(){
     try{return new JSONObject(prefs.getString("latest","{}"));}
@@ -45,6 +48,71 @@ final class LocalDiscovery {
   long lastAttempt(){return prefs.getLong("lastAttempt",0);}
   String lastAttemptState(){return prefs.getString("lastAttemptState","Never scanned");}
   String error(){return prefs.getString("lastError","");}
+  JSONObject preview(){
+    try{return new JSONObject(prefs.getString("preliminary","{}"));}
+    catch(Exception ex){return new JSONObject();}
+  }
+  JSONObject inProgress(){
+    try{return new JSONObject(prefs.getString("scanProgress","{}"));}
+    catch(Exception ex){return new JSONObject();}
+  }
+  private void recordProgress(String stage,int checked,int total,int passed,JSONObject rejects){
+    try{
+      prefs.edit().putString("scanProgress",new JSONObject()
+        .put("stage",stage).put("checked",checked).put("total",total)
+        .put("passed",passed).put("rejections",rejects)
+        .put("updatedMs",System.currentTimeMillis()).toString()).apply();
+    }catch(Exception ignored){}
+  }
+  private void countFailure(JSONObject reasons,String code){
+    try{reasons.put(code,reasons.optInt(code,0)+1);}catch(Exception ignored){}
+  }
+  private String classify(Exception ex){
+    if(ex instanceof SecurityException)return "AUTH_REJECTED";
+    String msg=ex.getMessage()==null?"":ex.getMessage().toLowerCase(Locale.US);
+    if(msg.contains("429")||msg.contains("rate limit"))return "API_RATE_LIMIT";
+    if(msg.contains("http 4")||msg.contains("http 5"))return "API_HTTP_ERROR";
+    if(msg.contains("daily")||msg.contains("candles")||msg.contains("history")||msg.contains("session"))
+      return "HISTORY_MISSING_OR_INSUFFICIENT";
+    if(msg.contains("timed out")||msg.contains("connection")||msg.contains("network"))
+      return "NETWORK_ERROR";
+    return "HISTORY_API_OR_PARSE_ERROR";
+  }
+  private String cacheCutoffDate(){
+    java.time.ZonedDateTime z=java.time.ZonedDateTime.now(IST);
+    LocalDate day=z.toLocalTime().isBefore(java.time.LocalTime.of(16,30))?
+      z.toLocalDate().minusDays(1):z.toLocalDate();
+    while(day.getDayOfWeek()==java.time.DayOfWeek.SATURDAY||
+          day.getDayOfWeek()==java.time.DayOfWeek.SUNDAY)day=day.minusDays(1);
+    return day.toString();
+  }
+  private GrowwReadOnlyClient.NextSessionHistory historyCached(GrowwReadOnlyClient api,
+                                                                String symbol) throws Exception{
+    String cutoff=cacheCutoffDate();
+    try{
+      JSONObject row=new JSONObject(historyCache.getString(symbol,"{}"));
+      if(cutoff.equals(row.optString("cutoff"))){
+        GrowwReadOnlyClient.NextSessionHistory h=new GrowwReadOnlyClient.NextSessionHistory();
+        h.sessionDate=row.getString("sessionDate");
+        h.candleMs=row.getLong("candleMs");h.open=row.getDouble("open");
+        h.high=row.getDouble("high");h.low=row.getDouble("low");
+        h.close=row.getDouble("close");h.volume=row.getDouble("volume");
+        h.previousClose=row.getDouble("previousClose");h.priorHigh20=row.getDouble("priorHigh20");
+        h.avgVolume20=row.getDouble("avgVolume20");h.avgValue20=row.getDouble("avgValue20");
+        h.completedSessions=row.getInt("sessions");
+        if(h.completedSessions>=61&&h.priorHigh20>0)return h;
+      }
+    }catch(Exception ignored){}
+    GrowwReadOnlyClient.NextSessionHistory h=api.nextSessionHistory(symbol);
+    JSONObject cache=new JSONObject().put("cutoff",cutoff)
+      .put("sessionDate",h.sessionDate).put("candleMs",h.candleMs)
+      .put("open",h.open).put("high",h.high).put("low",h.low)
+      .put("close",h.close).put("volume",h.volume).put("previousClose",h.previousClose)
+      .put("priorHigh20",h.priorHigh20).put("avgValue20",h.avgValue20)
+      .put("avgVolume20",h.avgVolume20).put("sessions",h.completedSessions);
+    historyCache.edit().putString(symbol,cache.toString()).apply();
+    return h;
+  }
   boolean scanning(){return RUNNING.get();}
   private String istDate(long timestamp) {
     return java.time.Instant.ofEpochMilli(timestamp).atZone(IST).toLocalDate().toString();
@@ -121,6 +189,7 @@ final class LocalDiscovery {
         updated=limited;
       }
       prefs.edit()
+        .remove("preliminary")
         .putLong("lastAttempt",System.currentTimeMillis())
         .putString("lastAttemptState","Completed · "+result.optInt("universeCount",0)+
             " NSE symbols · "+result.optInt("quotedCount",0)+" prices · "+
@@ -129,7 +198,8 @@ final class LocalDiscovery {
         .putString("latest",result.toString())
         .putString("sessionSnapshots",updated.toString())
         .putLong("lastScan",result.optLong("scannedAtMs",System.currentTimeMillis()))
-        .putString("lastError","").apply();
+        .putString("lastError","")
+        .remove("scanProgress").apply();
       // Lifecycle changes only after a successfully persisted, completed scan.
       new RecommendationLedger(app).onCompletedScan(result);
       ResearchAlerts.newShortlist(app,result,previous);
