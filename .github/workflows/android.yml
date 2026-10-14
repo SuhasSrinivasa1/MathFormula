@@ -1,12 +1,12 @@
-name: Build MathFormula v2 Android APK
+name: Build MathFormula v2.1 Android APK
 on:
   push:
     branches: [main, 'feat/**']
   pull_request:
   workflow_dispatch:
 concurrency:
-  group: mathformula-android-${{ github.ref }}
-  cancel-in-progress: true
+  group: mathformula-android-${{ github.sha }}
+  cancel-in-progress: false
 jobs:
   android:
     runs-on: ubuntu-latest
