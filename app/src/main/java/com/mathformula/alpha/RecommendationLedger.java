@@ -76,6 +76,7 @@ final class RecommendationLedger {
   /** A successful, completed full discovery scan alone changes shortlist membership. */
   synchronized void onCompletedScan(JSONObject scan) {
     long now=scan.optLong("scannedAtMs",System.currentTimeMillis());
+    boolean nextSession="NEXT_SESSION_RESEARCH".equals(scan.optString("scanMode",""));
     JSONArray discovered=scan.optJSONArray("top");
     if(discovered==null)return;
     JSONArray former=live(), next=new JSONArray(), archive=closed();
@@ -105,20 +106,25 @@ final class RecommendationLedger {
       set(row,"dayChangePct",pick.opt("dayChangePct"));
       set(row,"distancePct",pick.opt("distancePct"));
       set(row,"tradeMs",pick.optLong("tradeMs",0));
+      set(row,"priceAsOfSession",pick.optString("priceAsOfSession",""));
+      set(row,"scanMode",nextSession?"NEXT_SESSION_RESEARCH":"INTRADAY_RESEARCH");
       set(row,"preliminaryRank",pick.opt("preliminaryRank"));
       set(row,"source","NSE technical research · Groww");
       set(row,"signal","NO SIGNAL");
       set(row,"modelVerified",false);
       double distance=pick.optDouble("distancePct",Double.NaN);
       boolean crossed=Double.isFinite(distance)&&distance>=0;
-      set(row,"status",crossed?"BREAKOUT OBSERVED":"WATCHING");
-      set(row,"reason",crossed?
-        "Resistance crossed; full Alpha-30 verification, VWAP and risk/reward still incomplete":
-        "Forward-looking technical watch; breakout and complete Alpha-30 gates pending");
+      set(row,"status",nextSession?"NEXT SESSION WATCH":crossed?"BREAKOUT OBSERVED":"WATCHING");
+      set(row,"reason",nextSession?
+        "Next-session candidate from the completed NSE candle dated "+
+          pick.optString("priceAsOfSession","unknown")+
+          "; live confirmation and full Alpha-30 gates pending":
+        crossed?"Resistance crossed; full Alpha-30 verification, VWAP and risk/reward still incomplete":
+          "Forward-looking technical watch; breakout and complete Alpha-30 gates pending");
       if(old==null)set(row,"firstSeenStage",crossed?"AFTER CROSS":"BEFORE CROSS");
       // A local device cannot verify the NSE holiday calendar or full model.
       // Do NOT close a watch on a weekday guess or an arbitrary 4% extension.
-      if(crossed && Double.isFinite(distance)&&distance>4.0) {
+      if(!nextSession && crossed && Double.isFinite(distance)&&distance>4.0) {
         set(row,"status","EXTENDED · REVALIDATE");
         set(row,"reason","Extended beyond resistance. Entry is not verified; calculate full net risk/reward on the server.");
       }
