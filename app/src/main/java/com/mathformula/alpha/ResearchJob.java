@@ -12,7 +12,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * 15-minute best-effort selected-stock checks when Android permits.
+ * Best-effort periodic intraday/after-hours research when Android permits.
  * JobScheduler can defer or cancel runs; NOT a real-time NSE scanner or FCM.
  */
 public final class ResearchJob extends JobService {
@@ -34,10 +34,11 @@ public final class ResearchJob extends JobService {
   @Override public boolean onStartJob(JobParameters params){
     cancelled=false;
     if(worker.isShutdown())worker=Executors.newSingleThreadExecutor();
-    if(!MarketSchedule.weekdayTradingTime(System.currentTimeMillis())||
-        !new SecureGrowwStore(this).configured()){
-      return false;
-    }
+    if(!new SecureGrowwStore(this).configured())return false;
+    boolean open=MarketSchedule.weekdayTradingTime(System.currentTimeMillis());
+    java.time.LocalTime clock=java.time.Instant.now().atZone(MarketSchedule.IST).toLocalTime();
+    if(!open && !clock.isBefore(java.time.LocalTime.of(15,30)) &&
+       clock.isBefore(java.time.LocalTime.of(16,30)))return false;
     worker.execute(()->{
       try{
         if(!cancelled){
@@ -46,14 +47,19 @@ public final class ResearchJob extends JobService {
           // Android may delay this ~15m periodic job. Screen only when stale;
           // the shared quota limiter governs both foreground and background.
           long previous=discovery.lastScan();
-          if(!discovery.scanning() &&
-              (previous==0||System.currentTimeMillis()-previous>15*60_000L)){
-            try{discovery.scan(client,status->{});}
-            catch(Exception ex){
-              ResearchAlerts.record(this,0,"Background discovery unavailable; "+ex.getClass().getSimpleName());
+          boolean intraday=MarketSchedule.weekdayTradingTime(System.currentTimeMillis());
+          long age=System.currentTimeMillis()-previous;
+          long cadence=intraday?15*60_000L:4*60*60_000L;
+          if(!discovery.scanning() && (previous==0||age>cadence) &&
+             System.currentTimeMillis()-discovery.lastAttempt()>20*60_000L){
+            try{
+              if(intraday)discovery.scan(client,progress->{});
+              else discovery.scanForNextSession(client,progress->{});
+            }catch(Exception ex){
+              ResearchAlerts.record(this,0,"Background research unavailable; "+ex.getClass().getSimpleName());
             }
           }
-          if(!cancelled)ResearchAlerts.evaluate(this,client,discovery.latest());
+          if(!cancelled && intraday)ResearchAlerts.evaluate(this,client,discovery.latest());
         }
       }finally{
         if(!cancelled)jobFinished(params,false);
