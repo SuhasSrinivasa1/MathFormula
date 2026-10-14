@@ -392,6 +392,19 @@ final class LocalDiscovery {
          catch(Exception invalid){ /* intentionally not promoted to a validated candidate */ }
         Thread.sleep(300);
       }
+      if(afterHours && !candidates.isEmpty()){
+        // Never mix stale previous-session records with candidates from a newer
+        // completed NSE trading session. All displayed EOD watches share a date.
+        String latestSession="";
+        for(JSONObject candidate:candidates){
+          String session=candidate.optString("priceAsOfSession","");
+          if(session.compareTo(latestSession)>0)latestSession=session;
+        }
+        String commonSession=latestSession;
+        candidates.removeIf(candidate->
+          !commonSession.equals(candidate.optString("priceAsOfSession","")));
+        valid=candidates.size();
+      }
       candidates.sort((a,b)->Double.compare(
         b.optDouble("preliminaryRank",0),a.optDouble("preliminaryRank",0)));
       JSONArray top=new JSONArray();
