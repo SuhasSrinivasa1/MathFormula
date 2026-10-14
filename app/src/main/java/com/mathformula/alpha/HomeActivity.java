@@ -245,6 +245,12 @@ public final class HomeActivity extends Activity {
     LinearLayout brand=new LinearLayout(this);brand.setOrientation(LinearLayout.VERTICAL);
     brand.addView(text("MathFormula",27,INK,true));
     brand.addView(text("RESEARCH DESK  /  ALPHA-30 v1.0",10,BLUE,true));
+    long verified=getPreferences(MODE_PRIVATE).getLong("groww_verified_at_v22",0L);
+    long since=System.currentTimeMillis()-verified;
+    boolean authorized=secrets.configured()&&verified>0&&since>=0&&since<=15*60_000L;
+    brand.addView(text(authorized?"✓ Groww authenticated":
+        secrets.configured()?"○ Groww saved · tap ⚙ to verify":"○ Groww not connected",
+        11,authorized?GREEN:AMBER,true));
     top.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
     TextView settings=text("⚙",24,BLUE,true);
     settings.setContentDescription("Open streamlined settings");
