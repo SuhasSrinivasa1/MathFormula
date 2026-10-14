@@ -3,6 +3,9 @@ package com.mathformula.alpha;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.time.Instant;
+import java.time.LocalTime;
+import java.time.ZoneId;
 
 /** Immutable research formula; a score is NOT a calibrated win probability. */
 public final class Alpha30Engine {
@@ -45,6 +48,7 @@ public final class Alpha30Engine {
     public long quoteTimeMs=0;
     public boolean marketOpen, tradingAllowed, materialRiskClear;
     public boolean breakout15m, confirmation5m, vwap5m, vwap15m, sectorPositive, liquidityVerified;
+    public boolean noOverextension, feeScheduleVerified, marketRegimeClear, evidenceProvenanceVerified;
     public double lastPrice=Double.NaN, breakoutLevel=Double.NaN, rvol=Double.NaN;
     public double spreadBps=Double.NaN, netRR=Double.NaN;
     public double[] factors=new double[30];
@@ -61,12 +65,19 @@ public final class Alpha30Engine {
     Score p=score(s.factors,false);
     List<String> reasons=new ArrayList<>();
     if(!s.marketOpen) reasons.add("Market closed");
+    LocalTime tradeTime=Instant.ofEpochMilli(nowMs).atZone(ZoneId.of("Asia/Kolkata")).toLocalTime();
+    if(tradeTime.isBefore(LocalTime.of(9,30))||!tradeTime.isBefore(LocalTime.of(14,45)))
+      reasons.add("G12: outside 09:30–14:45 IST new-entry window");
     if(s.quoteTimeMs<=0 || s.quoteTimeMs>nowMs+3000 || nowMs-s.quoteTimeMs>10000)
       reasons.add("Missing or stale exchange quote (>10 seconds)");
     if(p.coverage<90) reasons.add(String.format(Locale.US,"Incomplete factor coverage %.0f%%",p.coverage));
     if(!Double.isFinite(s.factors[29])) reasons.add("Missing live execution feature T30");
     if(!reasons.isEmpty()) return new Result(p,Decision.NO_SIGNAL,reasons);
     if(!s.tradingAllowed || !s.materialRiskClear) reasons.add("Instrument or corporate-risk clearance failed");
+    if(!s.noOverextension) reasons.add("G11: no-overextension check unavailable or failed");
+    if(!s.marketRegimeClear) reasons.add("G08: market regime / risk-off veto not verified");
+    if(!s.evidenceProvenanceVerified) reasons.add("Source evidence and event timestamps not independently verified");
+    if(!s.feeScheduleVerified) reasons.add("G10: current broker fees, quantity and net R:R plan unverified");
     if(p.value<78) reasons.add("Alpha-30 score below 78");
     if(!s.breakout15m || !s.confirmation5m || !atLeast(s.lastPrice,s.breakoutLevel))
       reasons.add("Sustained 15-minute breakout / two 5-minute closes missing");
