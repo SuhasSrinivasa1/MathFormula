@@ -11,6 +11,8 @@ def quote(trade=NOW,price=105):
 def gates(t=NOW):
     return {"source":"https://example.org/signed-observations",
       "observed_ms":t,"trading_allowed":1,"material_risk_clear":1,
+      "no_overextension":1,"market_regime_clear":1,
+      "fee_schedule_verified":1,"provenance_verified":1,
       "breakout15m":1,"confirmation5m":1,"vwap5m":1,"vwap15m":1,
       "rvol":2.0,"sector_positive":1,"liquidity_verified":1,
       "spread_bps":8.0,"net_rr":1.8,
@@ -32,6 +34,12 @@ class GateEvaluation(unittest.TestCase):
     def test_missing_execution_evidence(self):
         x=evaluate([1.0]*30,quote(),None,100,NOW,True)
         self.assertEqual(x["decision"],"NO_SIGNAL")
+    def test_pdf_g11_and_provenance_gates(self):
+        for key in ("no_overextension","market_regime_clear",
+                    "fee_schedule_verified","provenance_verified"):
+            evidence=gates();evidence[key]=0
+            result=evaluate([1.0]*30,quote(),evidence,100,NOW,True)
+            self.assertNotEqual(result["decision"],"BUY_ELIGIBLE")
     def test_pdf_g12_early_and_late_cutoff(self):
         from datetime import datetime
         from zoneinfo import ZoneInfo
