@@ -28,3 +28,4 @@ Use a persistent release keystore with key alias `mathformula`. Never commit or 
 - To make the next version an in-place upgrade, keep package ID, keystore and key alias unchanged, increment versionCode.
 
 The signing identity is distinct from the research model and does not guarantee live market-data integration or background service availability.
+
