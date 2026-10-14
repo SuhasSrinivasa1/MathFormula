@@ -13,6 +13,10 @@
   approximately every 30 seconds. Alert evaluation is attempted about once
   every 5 minutes while open, and during background jobs whenever they execute.
 - Alert types:
+  0. **New research shortlist** — a new top-ranked stock is within 1.5% below
+     to 3% above verified resistance, with sufficiently recent quote and
+     preliminary technical ranking; limited to at most two per day and
+     separated by at least one hour.
   1. **Price breakout watch** — a Groww exchange-timestamped quote not older
      than 30 seconds crosses a validated prior 20-session resistance reference.
   2. **Technical setup confirmed** — two completed 5-minute candles and a

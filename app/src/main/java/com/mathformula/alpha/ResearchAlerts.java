@@ -68,6 +68,39 @@ final class ResearchAlerts {
       new WatchStore(c).audit("RESEARCH_ALERT",symbol,"NOT SEEN",key,message,0);
     }
   }
+  /** At most two research-only new-shortlist alerts each IST session day. */
+  static void newShortlist(Context c,JSONObject scan,JSONArray older){
+    if(!permission(c)||!MarketSchedule.weekdayTradingTime(System.currentTimeMillis()))return;
+    JSONArray top=scan.optJSONArray("top");
+    if(top==null||top.length()==0)return;
+    java.util.Set<String> previous=new java.util.HashSet<>();
+    if(older!=null)for(int i=0;i<older.length();i++){
+      JSONObject stock=older.optJSONObject(i);
+      if(stock!=null)previous.add(stock.optString("symbol",""));
+    }
+    SharedPreferences pref=c.getSharedPreferences(PREFS,Context.MODE_PRIVATE);
+    String today=java.time.LocalDate.now(MarketSchedule.IST).toString();
+    int used=pref.getInt("new_count_"+today,0);
+    long last=pref.getLong("new_last_"+today,0);
+    if(used>=2 || System.currentTimeMillis()-last<60*60_000L)return;
+    for(int i=0;i<Math.min(3,top.length());i++){
+      JSONObject p=top.optJSONObject(i);if(p==null)continue;
+      String symbol=p.optString("symbol","");
+      double gap=p.optDouble("distancePct",Double.NaN);
+      double strength=p.optDouble("preliminaryRank",Double.NaN);
+      long exchange=p.optLong("tradeMs",0),now=System.currentTimeMillis();
+      if(previous.contains(symbol)||!symbol.matches("[A-Z0-9&-]{1,26}")||
+        !Double.isFinite(gap)||gap< -1.5||gap>3||
+        !Double.isFinite(strength)||strength<55||
+        exchange<=0||exchange>now+3000||now-exchange>90_000L)continue;
+      post(c,symbol,"NEW_RESEARCH_CANDIDATE",
+        "MathFormula · new NSE research watch",
+        String.format(Locale.US,"%s near breakout (%.2f%% vs prior resistance). "+
+          "Review the setup; NOT BUY.",symbol,gap));
+      pref.edit().putInt("new_count_"+today,used+1).putLong("new_last_"+today,now).apply();
+      break;
+    }
+  }
   /**
    * Alert only when an exchange-time quote is recent AND a prior 20-day
    * breakout reference was actually verified.

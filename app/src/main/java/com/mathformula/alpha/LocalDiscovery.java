@@ -122,6 +122,7 @@ final class LocalDiscovery {
         .putString("sessionSnapshots",updated.toString())
         .putLong("lastScan",result.optLong("scannedAtMs",System.currentTimeMillis()))
         .putString("lastError","").apply();
+      ResearchAlerts.newShortlist(app,result,previous);
     }catch(Exception ex){failure("Could not preserve completed scan");}
   }
   /** Update displayed quotes without falsely reranking or changing validated breakout references. */
