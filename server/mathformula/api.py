@@ -4,6 +4,7 @@ from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from urllib.parse import urlparse,parse_qs
 from .storage import db
 from .alpha30 import VERSION
+from .recommendations import response_rows
 LOG=logging.getLogger("mathformula")
 def _rows(conn,sql,params=()):
     return [dict(x) for x in conn.execute(sql,params)]
@@ -35,6 +36,30 @@ class Handler(BaseHTTPRequestHandler):
             self._send(401,{"error":"Valid read-only bearer token required"});return
         try:
             with db(self.server.store_path) as conn:
+                if path in ("/v1/recommendations/live","/v1/recommendations/closed"):
+                    closed=path.endswith("/closed")
+                    now=int(time.time()*1000)
+                    rows=response_rows(conn,closed=closed)
+                    # Stored decisions are point-in-time records. Never present a past
+                    # positive decision as a CURRENT executable BUY after quote expiry.
+                    for row in rows:
+                        trade=row.get("tradeMs")
+                        fresh=isinstance(trade,int) and -3000<=now-trade<=10000
+                        row["quoteFreshNow"]=fresh
+                        if not closed and row["signal"]=="BUY_ELIGIBLE" and not fresh:
+                            row["lastVerifiedDecision"]="BUY_ELIGIBLE"
+                            row["signal"]="NO_SIGNAL"
+                            row["status"]="REVALIDATION_PENDING"
+                            row["reasons"]=["Exchange quote freshness has expired; verify all gates again"]
+                    self._send(200,{"modelVersion":VERSION,
+                       "recommendationSchema":"authoritative-v2.1",
+                       "dataAsOfMs":now,
+                       "dataSource":"Server-side NSE research and timestamped Groww/verification inputs",
+                       "status":"CLOSED" if closed else "LIVE",
+                       "readOnly":True,"count":len(rows),"items":rows,
+                       "limitations":"No automatic orders. Unconfigured source feeds prevent BUY. "+
+                           "Phone alerts are not guaranteed without configured external push."})
+                    return
                 if path=="/v1/export":
                     # Bounded diagnostic export: past discoveries and outcomes, never broker credentials,
                     # authorization headers, device IDs, Groww tokens, or raw server environment.
