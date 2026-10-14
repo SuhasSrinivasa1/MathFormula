@@ -54,8 +54,8 @@ public final class ScannerService extends Service {
         return;
       }
       if(!busy)fetchCycle();
-      // Align close to completed 5-min clock boundary. Additional 3 seconds allow a candle to settle.
-      long now=System.currentTimeMillis(), interval=300000L;
+      // Quote preview every minute; completed-candle confirmation every five minutes.
+      long now=System.currentTimeMillis(), interval=60000L;
       long delay=interval-(now%interval)+3000L;
       loop.postDelayed(this,Math.max(3000L,delay));
     }
@@ -104,7 +104,7 @@ public final class ScannerService extends Service {
     }
     try{
       if(Build.VERSION.SDK_INT>=29){
-        startForeground(70,notification("5-minute research checks · read-only"),
+        startForeground(70,notification("1m quotes · 5m analysis · read-only"),
           ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
       }else startForeground(70,notification("5-minute research checks · read-only"));
     }catch(RuntimeException ex){
@@ -127,13 +127,32 @@ public final class ScannerService extends Service {
   }
   private void fetchCycle(){
     busy=true;work.execute(()->{
-      List<String> symbols=watchlist();int success=0;String lastFailure="";
+      List<String> symbols=watchlist();
+      boolean fullFive=java.time.ZonedDateTime.now(IST).getMinute()%5==0;int success=0;String lastFailure="";
       long now=System.currentTimeMillis();
       for(String symbol:symbols){
         try{
           GrowwReadOnlyClient.Market m=client.quote(symbol);
-          try{client.dailyReference(m);}catch(Exception ex){m.note="Daily reference unavailable";}
-          try{client.candles(m);}catch(Exception ex){m.note+=" Candle data unavailable";}
+          org.json.JSONObject prior=store.get(symbol);
+          if(fullFive || !prior.has("reference")){
+            try{client.dailyReference(m);}catch(Exception ex){m.note="Daily reference unavailable";}
+          }else{
+            m.breakoutLevel=prior.optDouble("reference",Double.NaN);
+            m.referenceAsOf=prior.optString("referenceAsOf","");
+            m.referenceSource=prior.optString("referenceSource","");
+          }
+          if(fullFive) {
+            try{client.candles(m);}catch(Exception ex){m.note+=" Candle data unavailable";}
+          }else{
+            // Candles belong to the LAST completed 5-minute evaluation, not the 1-min quote.
+            m.two5m=prior.optBoolean("two5m",false);
+            m.fifteenCount=prior.optInt("fifteenCount",0);
+            m.fiveCount=prior.optInt("fiveCount",0);
+            m.aboveVwap5=prior.optBoolean("aboveVwap5",false);
+            m.aboveVwap15=prior.optBoolean("aboveVwap15",false);
+            m.lastFiveClose=prior.optDouble("lastFiveClose",Double.NaN);
+            m.lastFifteenClose=prior.optDouble("lastFifteenClose",Double.NaN);
+          }
           WatchState.Progress p=WatchState.decide(m.price,m.breakoutLevel,m.lastTradeMs,
             now,true,m.two5m,m.fifteenCount>0,m.aboveVwap5&&m.aboveVwap15);
           String previous=store.get(symbol).optString("stage","");
@@ -154,7 +173,7 @@ public final class ScannerService extends Service {
       sendBroadcast(changed);
       if(started){
         NotificationManager mgr=getSystemService(NotificationManager.class);
-        if(mgr!=null)mgr.notify(70,notification("Checked "+success+"/"+symbols.size()+" at "+LocalTime.now(IST).toString().substring(0,5)+" IST"));
+        if(mgr!=null)mgr.notify(70,notification("Quotes "+success+"/"+symbols.size()+" · "+(fullFive?"5m candles":"1m refresh")+" · "+LocalTime.now(IST).toString().substring(0,5)+" IST"));
       }
       busy=false;
     });

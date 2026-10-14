@@ -174,8 +174,10 @@ public final class MainActivity extends Activity {
     long exchangeMs=j.optLong("tradeMs",0),polled=j.optLong("polledAt",0);
     long age=System.currentTimeMillis()-exchangeMs;
     boolean fresh=exchangeMs>0&&age>=0&&age<=10000L;
+    long pollAge=System.currentTimeMillis()-polled;
+    boolean scanCurrent=polled>0&&pollAge>=0&&pollAge<=360000L;
     String recordedStage=j.optString("stage","WATCHING");
-    String stage=fresh?recordedStage:"DATA STALE";
+    String stage=scanCurrent?recordedStage:"COVERAGE GAP";
     int stageColor=stage.equals("FULL MODEL PENDING")?GREEN:
       stage.equals("NEAR BREAKOUT")||stage.equals("BREAKOUT CROSSED")||stage.equals("CONFIRMING")?BLUE:AMBER;
     c.addView(text(symbol+"  ·  "+stage,17,stageColor,true));gap(c,6);
@@ -208,7 +210,8 @@ public final class MainActivity extends Activity {
     c.addView(text("Exchange last trade: "+clock(exchangeMs)+
       (exchangeMs>0?" · "+(age/1000)+"s old":""),11,fresh?GREEN:AMBER,false));
     c.addView(text("App fetched: "+clock(polled)+" · Source: Groww Market Quote + Historical Candles",11,MUTED,false));
-    if(!fresh)c.addView(text("Price is NOT live. Prior state: "+recordedStage+".",12,AMBER,true));
+    if(!fresh)c.addView(text("Last observed exchange trade; NOT a confirmed live price.",12,AMBER,true));
+    if(!scanCurrent)c.addView(text("Last successful stock scan is over 6 minutes old. Reconnect monitoring.",12,RED,true));
     gap(c,7);
     c.addView(text("ALPHA-30: NO SIGNAL · fundamental, macro, event, RVOL and net R:R gates not fully verified",12,AMBER,true));
   }

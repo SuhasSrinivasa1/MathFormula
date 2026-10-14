@@ -14,7 +14,7 @@
 
 ## Background monitoring
 - Android foreground `dataSync` service runs after a user taps **Start background** while inside 09:15–15:30 IST on a weekday; holidays require exchange calendar integration.
-- Polls watchlist 5-minute boundary + 3 seconds, background even when UI is closed, and posts a persistent notification; separate breakout watch notifications are opt-in on Android 13+.
+- Polls quotes every minute (boundary + 3 seconds) and completed candle confirmation every five minutes, including when UI is closed, and posts a persistent notification; separate breakout watch notifications are opt-in on Android 13+.
 - Android 15 imposes a cumulative **six-hour per 24-hour** dataSync FGS cap. The session proactively terminates at 5h45 from user start, or market close, whichever is earlier. This is best-effort rather than continuous 24/7 monitoring.
 - A force-stop, network outage, battery restrictions, authentication expiry or OS process kill may interrupt a phone scanner. **No guarantee of every opportunity.**
 - No automatic start at boot: Android 15 restricts background service launches and dataSync starts from BOOT_COMPLETED. Reopen app/start monitoring when needed. The UI will indicate downtime.

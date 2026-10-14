@@ -143,12 +143,12 @@ final class GrowwReadOnlyClient {
       int n=bars.size();double[] previous=bars.get(n-2),current=bars.get(n-1);
       m.two5m=current[0]-previous[0]==300000L && previous[1]>m.breakoutLevel && current[1]>m.breakoutLevel && previous[1]>m.vwap && current[1]>m.vwap;
     }
-    if(bars.size()>=3){
-      // Require 3 consecutive completed 5-minute candles aligned to a fifteen-minute window.
-      int n=bars.size();double[] a=bars.get(n-3),b=bars.get(n-2),c=bars.get(n-1);
+    // Retain the MOST RECENT complete aligned 15-minute candle, even between 15m boundaries.
+    for(int n=2;n<bars.size();n++){
+      double[] a=bars.get(n-2),b=bars.get(n-1),c=bars.get(n);
       java.time.LocalDateTime t=java.time.LocalDateTime.ofInstant(Instant.ofEpochMilli((long)a[0]),IST);
       if(b[0]-a[0]==300000L&&c[0]-b[0]==300000L&&((t.getHour()*60+t.getMinute())-555)%15==0){
-        m.fifteenCount=1;m.lastFifteenClose=c[1];
+        m.fifteenCount++;m.lastFifteenClose=c[1];
         m.aboveVwap15=Double.isFinite(m.vwap)&&c[1]>m.vwap;
       }
     }
