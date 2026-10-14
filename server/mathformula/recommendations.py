@@ -86,6 +86,14 @@ def evaluate(values,quote,evidence,reference,now,market_open):
     if scored["score"]<78: reasons.append("Alpha-30 score below 78")
     if not evidence["trading_allowed"] or not evidence["material_risk_clear"]:
         reasons.append("Tradability/material risk clearance failed")
+    if not evidence.get("no_overextension"):
+        reasons.append("G11: verified no-overextension / adverse-risk check missing")
+    if not evidence.get("market_regime_clear"):
+        reasons.append("G08: source-backed market-risk regime clearance missing")
+    if not evidence.get("fee_schedule_verified"):
+        reasons.append("G10: source-verified current Groww fee schedule, size and net P&L missing")
+    if not evidence.get("provenance_verified"):
+        reasons.append("Source filing, exchange bar and broker evidence provenance not verified")
     if not (evidence["breakout15m"] and evidence["confirmation5m"] and last>=reference):
         reasons.append("15m breakout and two completed 5m closes unverified")
     if not (evidence["vwap5m"] and evidence["vwap15m"]):
