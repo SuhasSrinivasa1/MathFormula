@@ -18,6 +18,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.LinkedHashMap;
 
 /** Restricts outgoing Groww calls to token exchange, quote and historical-candle GETs. NO order endpoints. */
 final class GrowwReadOnlyClient {
@@ -41,6 +43,7 @@ final class GrowwReadOnlyClient {
   }
   private JSONObject call(String method,String path,String auth,String body) throws Exception {
     if(!path.startsWith("/v1/live-data/quote?") && !path.startsWith("/v1/historical/candles?")
+       && !path.startsWith("/v1/live-data/ohlc?") && !path.startsWith("/v1/live-data/ltp?")
        && !path.equals("/v1/token/api/access"))throw new SecurityException("Read-only API allowlist");
     HttpURLConnection c=(HttpURLConnection)new URL(ROOT+path).openConnection();
     try{
@@ -88,6 +91,63 @@ final class GrowwReadOnlyClient {
   }
   synchronized void resetSession(){sessionObtainedAt=0;secrets.clearSession();}
   private String encoded(String s) throws Exception{return URLEncoder.encode(s,"UTF-8");}
+  /** Batch read-only data. Groww supports up to 50 NSE CASH instruments. */
+  JSONObject batch(String type,List<String> symbols) throws Exception {
+    if(!"ltp".equals(type)&&!"ohlc".equals(type))throw new SecurityException("Unsupported Groww data request");
+    if(symbols.isEmpty()||symbols.size()>50)throw new IllegalArgumentException("Expected 1-50 NSE stocks");
+    StringBuilder tickers=new StringBuilder();
+    for(String symbol:symbols){
+      if(!symbol.matches("[A-Z0-9&-]{1,26}"))throw new IllegalArgumentException("Invalid NSE symbol");
+      if(tickers.length()>0)tickers.append(',');
+      tickers.append("NSE_").append(symbol);
+    }
+    String path="/v1/live-data/"+type+"?segment=CASH&exchange_symbols="+encoded(tickers.toString());
+    JSONObject resp=call("GET",path,token(),null);
+    JSONObject payload=resp.optJSONObject("payload");
+    if(payload==null)throw new IllegalStateException("Groww "+type+" payload missing");
+    return payload;
+  }
+  /** Completed daily history: at least 60 observations needed for the fixed NSE universe gate. */
+  static final class History {
+    double high20,previousClose,averageValue20,averageVolume20;
+    int sessions;String asOf="";
+  }
+  History history60(String symbol) throws Exception {
+    if(!symbol.matches("[A-Z0-9&-]{1,26}"))throw new IllegalArgumentException("Invalid NSE symbol");
+    LocalDate today=LocalDate.now(IST);
+    LocalDate start=today.minusDays(135),end=today.minusDays(1);
+    String path="/v1/historical/candles?exchange=NSE&segment=CASH&groww_symbol="+encoded("NSE-"+symbol)
+      +"&start_time="+encoded(start+" 09:15:00")+"&end_time="+encoded(end+" 15:30:00")
+      +"&candle_interval=1day";
+    JSONObject payload=call("GET",path,token(),null).optJSONObject("payload");
+    JSONArray entries=payload==null?null:payload.optJSONArray("candles");
+    if(entries==null)throw new IllegalStateException("Missing daily price series");
+    List<double[]> observed=new ArrayList<>();
+    for(int i=0;i<entries.length();i++){
+      JSONArray a=entries.optJSONArray(i);
+      if(a==null||a.length()<6)continue;
+      long stamp=readTime(a.opt(0));
+      if(stamp<=0||!Instant.ofEpochMilli(stamp).atZone(IST).toLocalDate().isBefore(today))continue;
+      double high=a.optDouble(2,Double.NaN),close=a.optDouble(4,Double.NaN),
+         volume=a.optDouble(5,Double.NaN);
+      if(high>0&&close>0&&volume>=0&&Double.isFinite(high)&&Double.isFinite(close)&&Double.isFinite(volume))
+        observed.add(new double[]{stamp,high,close,volume});
+    }
+    observed.sort((a,b)->Double.compare(a[0],b[0]));
+    if(observed.size()<60)throw new IllegalStateException("Fewer than 60 completed NSE daily sessions");
+    History h=new History();
+    h.sessions=observed.size();int n=observed.size();
+    h.previousClose=observed.get(n-1)[2];
+    h.asOf=Instant.ofEpochMilli((long)observed.get(n-1)[0]).atZone(IST).toLocalDate().toString();
+    for(int i=n-20;i<n;i++){
+      double[] d=observed.get(i);
+      h.high20=Math.max(h.high20,d[1]);
+      h.averageVolume20+=d[3]/20.;
+      h.averageValue20+=d[3]*d[2]/20.;
+    }
+    // Average value is a CLOSE × VOLUME approximation, not exchange reported traded turnover.
+    return h;
+  }
   Market quote(String symbol) throws Exception {
     if(!symbol.matches("[A-Z0-9&-]{1,26}"))throw new IllegalArgumentException("Invalid NSE symbol");
     String path="/v1/live-data/quote?exchange=NSE&segment=CASH&trading_symbol="+encoded(symbol);

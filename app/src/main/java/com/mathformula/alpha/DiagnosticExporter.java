@@ -76,7 +76,7 @@ final class DiagnosticExporter {
   static JSONObject manifest(boolean hasServer,String status,int obsLines,int auditLines) throws Exception{
     JSONObject manifest=new JSONObject();
     manifest.put("exportSchema","MathFormula-diagnostic-v1");
-    manifest.put("appRelease","1.5.0");
+    manifest.put("appRelease","1.6.0");
     manifest.put("formulaVersion",Alpha30Engine.VERSION);
     manifest.put("generatedUtcMs",System.currentTimeMillis());
     manifest.put("hasServerData",hasServer);
@@ -115,6 +115,8 @@ final class DiagnosticExporter {
           countLines(recent),countLines(events)).toString(2));
         entry(zip,"fixed_formula.json",modelSpec().toString(2));
         entry(zip,"local_watchlist_and_health.json",localSummary(state,symbols).toString(2));
+        // Automatic NSE discovery shortlist, coverage and archived promotions; no authentication fields.
+        entry(zip,"local_nse_discovery.json",new LocalDiscovery(ctx).exportJson());
         entry(zip,"observations.jsonl",recent);
         entry(zip,"state_changes_and_errors.jsonl",events);
         if(serverData!=null)entry(zip,"server_research_history.json",serverData.toString(2));

@@ -1,22 +1,19 @@
-# MathFormula v1.5 — Exportable Alpha-30 Diagnostic Logs
+# MathFormula v1.6 — Automatic NSE Discovery
 
-MathFormula is a read-only Android Groww watchlist with an independently
-hosted NSE-wide research scanner. The **Alpha-30 v1.0 mathematical formula
-and all 30 factor weights remain unchanged**.
+The launch screen is now **Opportunities · Watchlist · History**, not the previous
+large button grid. It uses the **existing Groww TOTP connection on the phone**
+to discover NSE CASH/EQ opportunities through Groww's instrument master, batch
+LTP + OHLC, and selected daily-candle history. No manual stock selection or
+refresh button is required.
 
-**New:** Tap **Export Logs (ZIP) · share for review** in the Android app,
-save the ZIP using the Android document picker, and upload it to ChatGPT.
-The export captures bounded local market observations, monitored symbols,
-data freshness, breakout transitions and errors, the model/version and
-optionally historical server research records. **No Groww secret, API token,
-password, account ID, device ID or backend URL is exported.**
+- Fresh qualified candidates replace older ones after a completed scan.
+- Top three is a **research discovery rank, NOT an Alpha-30 BUY**.
+- Prior 20-session breakout high, distance, quote timestamps, actual
+  scan coverage, historical readiness and error conditions are displayed.
+- Older selections move into the History tab and enter exported diagnostics.
+- An empty state is displayed instead of hardcoding TARIL, GAEL or ADVANCE.
+- Frozen 30-factor Alpha-30 mathematical formula unchanged.
 
-See [detailed ZIP schema and audit guidance](docs/EXPORT_DIAGNOSTICS.md).
-Log recording starts with installation of v1.5 and cannot reconstruct data
-that was never observed. The APK does not deploy the backend; see
-[server deployment instructions](server/README.md).
-Full Alpha-30 BUY decisions require verified financial, catalyst, macro
-and execution inputs not currently supplied by Groww. A market-research
-score or breakout is NOT proof of a profitable trading signal.
-
-CI workflows: `Build MathFormula APK` and `MathFormula Server CI`.
+**On-device scanning is not a substitute for a deployed always-on server.**
+No cloud host has been provisioned; see [deployment guide](server/README.md).
+For detailed reliability/limitations see [v1.6 documentation](docs/ACTIVATION_V16.md).
