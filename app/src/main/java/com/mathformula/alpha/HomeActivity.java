@@ -305,6 +305,19 @@ public final class HomeActivity extends Activity {
   private void spaceIn(LinearLayout c,int amount){
     c.addView(new View(this),new LinearLayout.LayoutParams(1,dp(amount)));
   }
+  private String factorDetail(JSONArray factors){
+    if(factors==null)return "No server factor evidence.";
+    StringBuilder out=new StringBuilder();
+    for(int i=0;i<Math.min(30,factors.length());i++){
+      JSONObject j=factors.optJSONObject(i);
+      if(j==null)continue;
+      out.append(j.optInt("number")).append(". ")
+        .append(j.optString("name")).append(" = ")
+        .append(j.isNull("value")?"MISSING/STALE":j.optString("value"))
+        .append("\\n");
+    }
+    return out.toString();
+  }
   private void stockCard(JSONObject j,int rank,boolean closed){
     LinearLayout c=card();
     LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);
@@ -315,8 +328,16 @@ public final class HomeActivity extends Activity {
     int stageColor=closed?MUTED:stage.contains("BREAKOUT")?AMBER:BLUE;
     header.addView(text(stage.toUpperCase(Locale.US),10,stageColor,true));
     c.addView(header);spaceIn(c,5);
-    c.addView(text(closed?"ARCHIVED RESEARCH · NOT AN EXECUTED TRADE":
-      "NSE CASH · TECHNICAL RESEARCH WATCH",10,MUTED,true));
+    boolean remote=serverConfigured()&&remoteConnected;
+    boolean buyNow=remote&&!closed&&open()&&
+      "BUY_ELIGIBLE".equals(j.optString("signal",""))&&
+      j.optBoolean("quoteFreshNow",false)&&
+      System.currentTimeMillis()-j.optLong("evaluationTimeMs",0)<=10000;
+    c.addView(text(buyNow?"VERIFIED BUY ELIGIBLE · VERIFY FRESHNESS BEFORE ACTING":
+      closed?"ARCHIVED RESEARCH · NO EXECUTED TRADE":
+      remote?"SERVER RESEARCH · "+j.optString("signal","NO SIGNAL"):
+             "LOCAL RESEARCH · NO SIGNAL",
+      10,buyNow?GREEN:MUTED,true));
     spaceIn(c,12);
     double price=j.optDouble("price",Double.NaN);
     double pct=j.optDouble("dayChangePct",Double.NaN);
@@ -330,12 +351,34 @@ public final class HomeActivity extends Activity {
     c.addView(text((closed?"Last recorded quote · ":"Exchange observation · ")+time(trade),
       11,quoteFresh?GREEN:MUTED,false));
     spaceIn(c,7);
-    String reason=closed?j.optString("closeReason","Closed as a historical research watch"):
-      j.optString("reason","Pending full Alpha-30 and executable risk validation");
+    JSONArray why=j.optJSONArray("reasons");
+    StringBuilder explanations=new StringBuilder();
+    if(why!=null)for(int i=0;i<Math.min(3,why.length());i++){
+      if(i>0)explanations.append("; ");
+      explanations.append(why.optString(i));
+    }
+    String reason=closed?j.optString("closeReason","Historical research watch closed"):
+      remote?explanations.length()>0?explanations.toString():
+        "Alpha-30 verified at last exchange observation":
+      j.optString("reason","Pending full Alpha-30 validation");
     c.addView(text(reason,12,INK,false));
     spaceIn(c,9);
-    c.addView(text("NO SIGNAL  ·  Missing mandatory Alpha-30 inputs / entry validation",
-      11,AMBER,true));
+    if(remote){
+      c.addView(text("Alpha-30 score "+String.format(Locale.US,"%.1f",j.optDouble("alpha30Score",0))+
+        "/100 · coverage "+String.format(Locale.US,"%.1f",j.optDouble("coveragePct",0))+"%",
+        11,MUTED,false));
+      JSONObject gates=j.optJSONObject("execution_evidence");
+      if(gates!=null&&gates.length()>0){
+        spaceIn(c,5);
+        c.addView(text("Entry "+money(gates.optDouble("entry",Double.NaN))+
+          " · Stop "+money(gates.optDouble("stop_loss",Double.NaN))+
+          " · Target "+money(gates.optDouble("target",Double.NaN)),11,INK,true));
+      }
+    }
+    spaceIn(c,5);
+    c.addView(text(buyNow?"BUY ELIGIBLE AT VERIFIED INSTANT · READ DETAILS":
+      "NO CURRENT VERIFIED BUY · SEE MISSING REQUIREMENTS",
+      11,buyNow?GREEN:AMBER,true));
     c.setContentDescription(symbol+" research details");
     c.setOnClickListener(v->{
       String message="Status: "+stage+"\n\nObserved price: "+money(price)+
@@ -344,7 +387,10 @@ public final class HomeActivity extends Activity {
         "\nFirst selected: "+time(j.optLong("openedAtMs",j.optLong("scannedAtMs",0)))+
         (closed?"\nClosed: "+time(j.optLong("closedAtMs",0)):"")+
         "\n\nReason: "+reason+
-        "\n\nAlpha-30: NO SIGNAL. Neither a BUY recommendation nor an executed trade.";
+        "\n\nAlpha-30: "+(buyNow?"Verified at observed instant; recheck current quote.":
+          "NO CURRENT VERIFIED BUY")+
+        "\n\n"+(remote?"Evidence:\n"+factorDetail(j.optJSONArray("factor_evidence")):
+          "Local research-only candidate; full data unavailable.");
       new android.app.AlertDialog.Builder(this).setTitle(symbol+" · recommendation record")
         .setMessage(message).setPositiveButton("Done",null).show();
     });
