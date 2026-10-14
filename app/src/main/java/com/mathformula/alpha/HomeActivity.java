@@ -39,11 +39,13 @@ public final class HomeActivity extends Activity {
   private static final int INK=Color.rgb(20,38,56),BLUE=Color.rgb(24,91,154),
       MUTED=Color.rgb(103,113,127),GREEN=Color.rgb(19,123,85),
       AMBER=Color.rgb(158,98,19),RED=Color.rgb(180,59,58);
-  private static final int EXPORT=867;
+  private static final int EXPORT=867,IMPORT_EVIDENCE=868;
   private final Handler handler=new Handler(Looper.getMainLooper());
   private final ExecutorService worker=Executors.newSingleThreadExecutor();
   private LocalDiscovery discovery;
   private RecommendationLedger ledger;
+  private Alpha30EvidenceStore evidenceStore;
+  private String evidenceImportNote="";
   private JSONArray remoteLive=new JSONArray(),remoteClosed=new JSONArray();
   private boolean remoteBusy=false,remoteConnected=false;
   private long remoteLastAttempt=0,remoteLastSuccess=0;
@@ -112,6 +114,7 @@ public final class HomeActivity extends Activity {
     secrets=new SecureGrowwStore(this);groww=new GrowwReadOnlyClient(secrets);
     discovery=new LocalDiscovery(this);
     ledger=new RecommendationLedger(this);
+    evidenceStore=new Alpha30EvidenceStore(this);
     ResearchAlerts.channel(this);
     ResearchJob.schedule(this);
     if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){
@@ -588,6 +591,95 @@ public final class HomeActivity extends Activity {
         .setMessage(message).setPositiveButton("Done",null).show();
     });
   }
+  private void importEvidence(){
+    Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+    intent.addCategory(Intent.CATEGORY_OPENABLE);
+    intent.setType("text/*");
+    try{startActivityForResult(intent,IMPORT_EVIDENCE);}
+    catch(Exception ex){Toast.makeText(this,"Document picker not available",Toast.LENGTH_LONG).show();}
+  }
+  private void overnightEvidencePanel(JSONObject scan){
+    LinearLayout c=card();
+    c.addView(text("PDF Alpha-30 · 29-factor overnight qualification",17,INK,true));
+    spaceIn(c,7);
+    c.addView(text("Frozen groups: Fundamentals 27 · Catalysts 23 · Macro 19 · Trading 31. "+
+      "Overnight denominator 91; T30 excluded. Score ≥68 AND coverage ≥90% required.",11,MUTED,false));
+    spaceIn(c,8);
+    JSONArray pool=scan.optJSONArray("verifiedTechnicalPool");
+    ArrayList<JSONObject> eligible=new ArrayList<>();
+    int sufficient=0,scored=0;double bestCoverage=0;
+    long now=System.currentTimeMillis();
+    if(pool!=null){
+      for(int i=0;i<pool.length();i++){
+        JSONObject candidate=pool.optJSONObject(i);if(candidate==null)continue;
+        String symbol=candidate.optString("symbol","");
+        if(!symbol.matches("[A-Z0-9&-]{1,26}"))continue;
+        Alpha30EvidenceStore.EvidenceScore proof=evidenceStore.overnight(symbol,now);
+        scored++;
+        bestCoverage=Math.max(bestCoverage,proof.overnight.coverage);
+        if(proof.overnight.coverage>=90)sufficient++;
+        if(proof.shortlistEligible()){
+          try{
+            JSONObject row=new JSONObject(candidate.toString());
+            row.put("alpha30OvernightScore",proof.overnight.value);
+            row.put("alpha30Coverage",proof.overnight.coverage);
+            row.put("observedFactors",proof.observed);
+            eligible.add(row);
+          }catch(Exception ignored){}
+        }
+      }
+    }
+    eligible.sort((a,b)->Double.compare(
+        b.optDouble("alpha30OvernightScore",0),a.optDouble("alpha30OvernightScore",0)));
+    c.addView(text("Historical candidates reviewed: "+scored+
+      " · sufficient factor coverage: "+sufficient+
+      " · overnight score-qualified: "+eligible.size(),12,INK,true));
+    spaceIn(c,4);
+    c.addView(text("Best evidence coverage: "+
+      String.format(Locale.US,"%.1f%%",bestCoverage)+" · missing values are NOT scored as verified",
+      11,MUTED,false));
+    if(eligible.isEmpty()){
+      spaceIn(c,8);
+      c.addView(text("NO VERIFIED OVERNIGHT TOP 3 · source-backed financial, catalyst and macro factors "+
+        "are not automatically supplied by Groww market quotes.",12,AMBER,true));
+    }else{
+      spaceIn(c,8);
+      c.addView(text("Source-declared Alpha-30 watchlist · review provenance independently",12,BLUE,true));
+      for(int i=0;i<Math.min(3,eligible.size());i++){
+        JSONObject candidate=eligible.get(i);
+        String symbol=candidate.optString("symbol");
+        Alpha30EvidenceStore.EvidenceScore score=evidenceStore.overnight(symbol,now);
+        final String explain="Observed 29-factor score: "+
+          String.format(Locale.US,"%.2f /100",score.overnight.value)+
+          "\nWeighted coverage: "+String.format(Locale.US,"%.1f%%",score.overnight.coverage)+
+          "\nObserved factors: "+score.observed+"/29"+
+          "\nDeclared HTTPS sources must be verified independently. Live entry and fees NOT validated."+
+          "\nMissing factors: "+score.missingNames.toString();
+        TextView row=text((i+1)+". "+symbol+" · score "+
+          String.format(Locale.US,"%.1f",score.overnight.value)+
+          " · coverage "+String.format(Locale.US,"%.0f%%",score.overnight.coverage),
+          13,BLUE,true);
+        row.setPadding(dp(0),dp(8),dp(0),dp(8));
+        row.setOnClickListener(v->new android.app.AlertDialog.Builder(this)
+          .setTitle(symbol+" · Alpha-30 source evidence").setMessage(explain)
+          .setPositiveButton("Close",null).show());
+        c.addView(row);
+      }
+    }
+    spaceIn(c,10);
+    android.widget.Button importButton=new android.widget.Button(this);
+    importButton.setAllCaps(false);
+    importButton.setText("Import sourced Alpha-30 factor CSV");
+    importButton.setTextColor(Color.WHITE);importButton.setBackground(rounded(BLUE));
+    importButton.setOnClickListener(v->importEvidence());
+    c.addView(importButton,new LinearLayout.LayoutParams(-1,dp(44)));
+    spaceIn(c,5);
+    c.addView(text("CSV: symbol,factor,value,observed_at_utc,source · factor 1–30 · value 0–1 · timestamp in UTC/offset · HTTPS URL.",
+      11,MUTED,false));
+    if(!evidenceImportNote.isEmpty()){
+      spaceIn(c,4);c.addView(text(evidenceImportNote,11,AMBER,false));
+    }
+  }
   private void renderLive(){
     JSONObject scan=discovery.latest();
     JSONArray latestTop=scan.optJSONArray("top");
@@ -626,7 +718,10 @@ public final class HomeActivity extends Activity {
         remoteError.isEmpty()?"Scanner configured, not yet connected":remoteError,
         12,remoteConnected?GREEN:AMBER,false));
     }
-    if(!serverConfigured())summaryCard(scan,false);
+    if(!serverConfigured()){
+      summaryCard(scan,false);
+      overnightEvidencePanel(scan);
+    }
     if(live.length()==0&&provisional.length()==0){
       LinearLayout empty=card();
       empty.addView(text(busy?"Scanning NSE…":"No active verified research shortlist",16,INK,true));
@@ -740,7 +835,19 @@ public final class HomeActivity extends Activity {
   }
   @Override protected void onActivityResult(int request,int result,Intent data){
     super.onActivityResult(request,result,data);
-    if(request!=EXPORT||result!=RESULT_OK||data==null||data.getData()==null)return;
+    if(result!=RESULT_OK||data==null||data.getData()==null)return;
+    if(request==IMPORT_EVIDENCE){
+      Uri file=data.getData();
+      worker.execute(()->{
+        String resultText;
+        try{resultText=evidenceStore.importEvidence(this,file).description();}
+        catch(Exception ex){resultText="Evidence import rejected: "+ex.getClass().getSimpleName();}
+        final String summary=resultText;
+        handler.post(()->{evidenceImportNote=summary;render();});
+      });
+      return;
+    }
+    if(request!=EXPORT)return;
     Uri uri=data.getData();
     worker.execute(()->{
       String issue=null;
