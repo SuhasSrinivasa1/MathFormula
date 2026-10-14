@@ -397,7 +397,7 @@ public final class HomeActivity extends Activity {
   }
   private void renderLive(){
     JSONObject scan=discovery.latest();
-    JSONArray live=ledger.live();
+    JSONArray live=serverConfigured()?(remoteConnected?remoteLive:new JSONArray()):ledger.live();
     root.addView(text("Live recommendations",22,INK,true));
     space(4);
     root.addView(text("Forward-looking watches, carried forward while the setup remains valid.",12,MUTED,false));
@@ -405,28 +405,51 @@ public final class HomeActivity extends Activity {
     LinearLayout overview=card();
     overview.addView(text(live.length()+"  active research watches",20,INK,true));
     spaceIn(overview,5);
-    overview.addView(text("BUY eligible: 0 verified · Never infer a BUY from price alone",
-      12,AMBER,false));
-    summaryCard(scan,false);
+    int verified=0;
+    if(serverConfigured()&&remoteConnected&&open())
+      for(int i=0;i<live.length();i++){
+        JSONObject row=live.optJSONObject(i);
+        if(row!=null&&"BUY_ELIGIBLE".equals(row.optString("signal"))&&
+           row.optBoolean("quoteFreshNow",false)&&
+           System.currentTimeMillis()-row.optLong("evaluationTimeMs",0)<=10000)verified++;
+      }
+    overview.addView(text("Currently verified BUY eligible: "+verified,12,verified>0?GREEN:AMBER,false));
+    if(serverConfigured()){
+      spaceIn(overview,7);
+      overview.addView(text(remoteConnected?
+        "Independent scanner connected · refreshed "+time(remoteLastSuccess):
+        remoteBusy?"Connecting to independent scanner…":
+        remoteError.isEmpty()?"Scanner configured, not yet connected":remoteError,
+        12,remoteConnected?GREEN:AMBER,false));
+    }
+    if(!serverConfigured())summaryCard(scan,false);
     if(live.length()==0){
       LinearLayout empty=card();
       empty.addView(text(busy?"Scanning NSE…":"No active verified research shortlist",16,INK,true));
       spaceIn(empty,7);
-      empty.addView(text(!secrets.configured()?"Connect Groww using Settings to enable discovery.":
-        "A completed eligible scan is required. The app never recycles old recommendations as new.",12,MUTED,false));
+      empty.addView(text(serverConfigured()?
+        (remoteConnected?"No active scanner recommendations; no stocks are invented.":
+          "Cannot load authoritative recommendations. Check server status in Settings."):
+        !secrets.configured()?"Connect Groww in Settings for local research-only discovery.":
+        "A completed NSE scan is required; no cached candidate is presented as new.",12,MUTED,false));
     }
     for(int i=0;i<live.length();i++){
       JSONObject item=live.optJSONObject(i);
       if(item!=null)stockCard(item,i+1,false);
     }
     space(8);
-    root.addView(text("WATCHING → BREAKOUT OBSERVED → ALPHA-30 VERIFICATION → closure or verified entry. " +
-      "This build cannot issue BUY: fundamentals, catalysts and risk/reward remain unavailable.",
+    root.addView(text(serverConfigured()?
+      "Only fresh server-verified 30-factor decisions may display BUY eligibility; never order automatically.":
+      "LOCAL RESEARCH MODE · Configure an independent scanner for full factor and trading validation.",
       11,MUTED,false));
   }
   private void renderClosed(){
-    JSONArray records=ledger.closed();
+    JSONArray records=serverConfigured()?(remoteConnected?remoteClosed:new JSONArray()):ledger.closed();
     root.addView(text("Closed recommendations",22,INK,true));space(5);
+    if(serverConfigured()&&!remoteConnected){
+      root.addView(text("Independent scanner unavailable · remote closed history cannot be verified.",12,AMBER,false));
+      space(6);
+    }
     root.addView(text("Immutable research outcomes with reasons and observation times.",12,MUTED,false));
     space(13);
     LinearLayout overview=card();
@@ -446,8 +469,8 @@ public final class HomeActivity extends Activity {
       empty.addView(text("Closed records are created when a completed NSE scan or a fresh quote invalidates a watch, not merely because the exchange closes.",12,MUTED,false));
     }
     space(4);
-    JSONObject previous=discovery.lastClosedSession(System.currentTimeMillis());
-    root.addView(text("Previous session archive",17,INK,true));space(8);
+    JSONObject previous=serverConfigured()?new JSONObject():discovery.lastClosedSession(System.currentTimeMillis());
+    if(!serverConfigured()){root.addView(text("Previous local session archive",17,INK,true));space(8);}
     if(previous.length()>0){
       LinearLayout snapshot=card();
       snapshot.addView(text("Last captured session · "+previous.optString("sessionDate",""),14,INK,true));
@@ -463,7 +486,7 @@ public final class HomeActivity extends Activity {
             " · research watch at capture",12,INK,false));
         }
       }
-    }else{
+    }else if(!serverConfigured()){
       LinearLayout c=card();
       c.addView(text("No prior session scan captured on this device.",12,MUTED,false));
     }
