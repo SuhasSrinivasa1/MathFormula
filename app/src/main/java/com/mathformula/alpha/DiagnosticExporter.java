@@ -73,10 +73,13 @@ final class DiagnosticExporter {
     summary.put("snapshots",saved);
     return summary;
   }
-  static JSONObject manifest(boolean hasServer,String status,int obsLines,int auditLines) throws Exception{
+  static JSONObject manifest(Context ctx,boolean hasServer,String status,int obsLines,int auditLines) throws Exception{
     JSONObject manifest=new JSONObject();
     manifest.put("exportSchema","MathFormula-diagnostic-v1");
-    manifest.put("appRelease","1.8.0");
+    String appVersion="unknown";
+    try{appVersion=ctx.getPackageManager().getPackageInfo(ctx.getPackageName(),0).versionName;}
+    catch(Exception ignored){}
+    manifest.put("appRelease",appVersion);
     manifest.put("formulaVersion",Alpha30Engine.VERSION);
     manifest.put("generatedUtcMs",System.currentTimeMillis());
     manifest.put("hasServerData",hasServer);
@@ -111,7 +114,7 @@ final class DiagnosticExporter {
     try(OutputStream file=ctx.getContentResolver().openOutputStream(uri,"w")){
       if(file==null)throw new java.io.IOException("Android refused document writing");
       try(ZipOutputStream zip=new ZipOutputStream(file)){
-        entry(zip,"manifest.json",manifest(serverData!=null,serverResult,
+        entry(zip,"manifest.json",manifest(ctx,serverData!=null,serverResult,
           countLines(recent),countLines(events)).toString(2));
         entry(zip,"fixed_formula.json",modelSpec().toString(2));
         JSONObject quota=new JSONObject().put("rules",GrowwQuota.policy())
