@@ -1,0 +1,24 @@
+name: MathFormula Server CI
+on:
+  push:
+    branches: [main, 'feat/**']
+  pull_request:
+  workflow_dispatch:
+jobs:
+  test-server:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Syntax check
+        run: python -m compileall -q server/mathformula
+      - name: Unit tests
+        env:
+          PYTHONPATH: server
+        run: python -m unittest discover -v -s server/tests
+      - name: Docker image
+        run: docker build -f server/Dockerfile -t mathformula-scanner:ci .

@@ -1,0 +1,4 @@
+{$DOMAIN} {
+  encode zstd gzip
+  reverse_proxy scanner:8765
+}
