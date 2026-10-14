@@ -5,7 +5,7 @@ when all 30 normalized inputs and independent execution evidence are fresh,
 sourced and consistent. This module never places orders.
 """
 import json
-from datetime import datetime
+from datetime import datetime, time as clock
 from zoneinfo import ZoneInfo
 IST=ZoneInfo('Asia/Kolkata')
 from math import isfinite
@@ -65,6 +65,10 @@ def evaluate(values,quote,evidence,reference,now,market_open):
     trade_ms=quote["trade_ms"] if quote else None
     last=quote["price"] if quote else None
     if not market_open: reasons.append("NSE market closed")
+    # PDF rulebook G12: no routine new BUY before 09:30 or at/after 14:45 IST.
+    local_clock=datetime.fromtimestamp(now/1000,IST).time()
+    if not clock(9,30)<=local_clock<clock(14,45):
+        reasons.append("Outside permitted 09:30–14:45 IST new-entry window")
     if not isinstance(trade_ms,int) or trade_ms>now+3000 or now-trade_ms>10000:
         reasons.append("Missing or stale exchange quote (>10s)")
     if scored["coveragePct"]<90:
