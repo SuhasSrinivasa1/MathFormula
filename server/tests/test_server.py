@@ -5,6 +5,7 @@ from mathformula.alpha30 import WEIGHTS,score,VERSION
 from mathformula.storage import db,import_universe,import_eod,import_events,import_factors
 from mathformula.groww import totp
 from mathformula.discovery import shortlist
+from mathformula.nse_import import convert_bhavdata
 
 class EngineTests(unittest.TestCase):
     def test_immutable_formula_and_missing_factor(self):
@@ -19,6 +20,19 @@ class EngineTests(unittest.TestCase):
     def test_known_rfc_totp(self):
         # RFC 6238 HMAC-SHA1 result at time 59 is 94287082 (8 digits); last six 287082.
         self.assertEqual(totp("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",59),"287082")
+
+class NseImportTests(unittest.TestCase):
+    def test_bhavdata_turnover_units(self):
+        example=("SYMBOL,SERIES,DATE1,OPEN_PRICE,HIGH_PRICE,LOW_PRICE,CLOSE_PRICE,"
+                 "TTL_TRD_QNTY,TURNOVER_LACS\\n"
+                 "TARIL,EQ,13-Oct-2026,300,315,296,304,7320000,2500\\n"
+                 "NOTEQ,BE,13-Oct-2026,100,100,99,99,100,1\\n")
+        rows=convert_bhavdata(example,date(2026,10,13))
+        self.assertEqual(len(rows),1)
+        self.assertEqual(rows[0]["turnover_inr"],250000000)
+    def test_fails_closed_on_unknown_nse_schema(self):
+        with self.assertRaises(ValueError):
+            convert_bhavdata("SYMBOL,OTHER\\nTARIL,X\\n",date(2026,10,13))
 
 class DataTests(unittest.TestCase):
     def setUp(self):

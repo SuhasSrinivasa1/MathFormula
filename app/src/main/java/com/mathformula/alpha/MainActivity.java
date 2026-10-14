@@ -49,13 +49,21 @@ public final class MainActivity extends Activity {
   private LinearLayout page;
   private boolean loading=false;
   private String activeTab="LIVE";
+  private boolean serverLoading=false;
+  private long serverLastAttemptMs=0,serverLastSuccessMs=0;
+  private JSONObject serverStatus=new JSONObject();
+  private org.json.JSONArray serverStocks=new org.json.JSONArray();
+  private org.json.JSONArray serverPreClose=new org.json.JSONArray();
+  private org.json.JSONArray serverMisses=new org.json.JSONArray();
+  private String serverError="Server not configured";
   private long lastAttempt=0;
   private String status="OFFLINE · Enter Groww TOTP credentials";
   private final List<GrowwReadOnlyClient.Market> quotes=new ArrayList<>();
   private final List<String> errors=new ArrayList<>();
   private final Runnable fiveMinute=new Runnable(){
     @Override public void run(){
-      if(vault.configured() && !watchStore.enabled())fetch(); else render();
+      if("SERVER".equals(activeTab))fetchServer();
+      else if(vault.configured() && !watchStore.enabled())fetch(); else render();
       long now=System.currentTimeMillis();
       handler.postDelayed(this,60000L-(now%60000L)+3000L);
     }
@@ -88,6 +96,10 @@ public final class MainActivity extends Activity {
     super.onCreate(b);
     vault=new SecureGrowwStore(this);client=new GrowwReadOnlyClient(vault);
     watchStore=new WatchStore(this);
+    if(!serverUrl().isEmpty()){
+      activeTab="SERVER";
+      serverError="Checking independent scanner status";
+    }
     if(vault.configured())status="Groww credentials saved securely. Refresh to retrieve prices.";
     getWindow().setStatusBarColor(Color.rgb(248,250,252));
     getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
@@ -138,6 +150,7 @@ public final class MainActivity extends Activity {
     addButtonRow(watchStore.enabled()?"Renew close coverage":"Start background",this::startMonitoring,
       "Stop background",this::stopMonitoring);
     addButtonRow("Edit Watchlist",this::editWatchlist,"Earnings dates",this::editEvents);
+    addButtonRow("NSE Scanner",()->selectTab("SERVER"),"Server Settings",this::editServer);
     addButtonRow("Live",()->selectTab("LIVE"),"Pre-close",()->selectTab("PRE_CLOSE"));
     addButtonRow("Runners & misses",()->selectTab("RUNNERS"),"Audit history",this::showAudit);
     page.addView(btn("View fixed 30 Model Factors",this::showFactors),new LinearLayout.LayoutParams(-1,dp(44)));
@@ -156,7 +169,9 @@ public final class MainActivity extends Activity {
       long until=MarketSchedule.minutesUntilClose(System.currentTimeMillis());
       monitor.addView(text("NSE closes in approximately "+until+" minutes · last-hour opportunity checks at 14:45, 15:00, 15:15, 15:25 IST.",11,MUTED,false));
     }
-    if("PRE_CLOSE".equals(activeTab)){
+    if("SERVER".equals(activeTab)){
+      renderServer();
+    }else if("PRE_CLOSE".equals(activeTab)){
       page.addView(text("PRE-CLOSE OPPORTUNITIES",15,BLUE,true));gap(page,7);
       page.addView(text("Only your monitored symbols. These are event and technical WATCH candidates, not next-day predictions or BUY signals.",12,MUTED,false));gap(page,8);
       LinearLayout summary=card();
@@ -287,6 +302,144 @@ public final class MainActivity extends Activity {
     new AlertDialog.Builder(this).setTitle("Alpha-30 · Local Audit")
       .setMessage(watchStore.auditText()).setPositiveButton("Close",null).show();
   }
+  private String serverUrl(){
+    return getPreferences(MODE_PRIVATE).getString("server_url","");
+  }
+  private void editServer(){
+    LinearLayout form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);
+    form.setPadding(dp(18),dp(8),dp(18),dp(6));
+    EditText url=new EditText(this);url.setSingleLine(true);
+    url.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI);
+    url.setHint("https://scanner.your-domain.com");url.setText(serverUrl());
+    EditText key=new EditText(this);key.setSingleLine(true);
+    key.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
+    key.setHint("Separate APP_READ_TOKEN from server .env");
+    form.addView(text("Server needs independent HTTPS deployment. This is NOT a Groww credential.",12,MUTED,false));
+    form.addView(url);form.addView(key);
+    new AlertDialog.Builder(this).setTitle("NSE scanner · HTTPS viewer access")
+      .setView(form).setPositiveButton("Save",(d,w)->{
+        String base=url.getText().toString().trim().replaceAll("/+$","");
+        String token=key.getText().toString().trim();
+        try{
+          String effective=token.isEmpty()?vault.get("server_viewer_token"):token;
+          if(!base.isEmpty())new BackendReadOnlyClient(base,effective);
+          if(!token.isEmpty())vault.put("server_viewer_token",token);
+          getPreferences(MODE_PRIVATE).edit().putString("server_url",base).apply();
+          serverError=base.isEmpty()?"Server not configured":"Connecting to independent NSE scanner";
+          activeTab="SERVER";render();if(!base.isEmpty())fetchServer();
+        }catch(Exception ex){serverError="Invalid HTTPS server address or viewer token";render();}
+      }).setNeutralButton("Disconnect",(d,w)->{
+        getPreferences(MODE_PRIVATE).edit().remove("server_url").apply();
+        serverStocks=new org.json.JSONArray();serverStatus=new JSONObject();serverError="Server disconnected";
+        vault.put("server_viewer_token","");render();
+      }).setNegativeButton("Cancel",null).show();
+  }
+  private void fetchServer(){
+    if(serverLoading)return;
+    if(serverUrl().isEmpty()||vault.get("server_viewer_token").length()<32){
+      serverError="Configure an HTTPS scanner and APP_READ_TOKEN in Server Settings";
+      render();return;
+    }
+    long now=System.currentTimeMillis();
+    if(now-serverLastAttemptMs<10000L){render();return;}
+    serverLastAttemptMs=now;serverLoading=true;
+    serverError="Connecting to scanner…";render();
+    worker.execute(()->{
+      JSONObject status=null,stocks=null,preclose=null,misses=null;String error=null;
+      try{
+        BackendReadOnlyClient service=new BackendReadOnlyClient(serverUrl(),vault.get("server_viewer_token"));
+        status=service.get("/v1/status");
+        stocks=service.get("/v1/watchlist");
+        preclose=service.get("/v1/preclose");
+        misses=service.get("/v1/misses");
+      }catch(Exception e){
+        error=e.getMessage()==null?"Scanner endpoint unavailable":e.getMessage();
+      }
+      final JSONObject a=status,b=stocks,c=preclose,d=misses;
+      final String failure=error;
+      handler.post(()->{
+        serverLoading=false;
+        if(failure!=null){serverError=failure;}
+        else{
+          serverStatus=a;
+          serverStocks=b.optJSONArray("stocks")==null?new org.json.JSONArray():b.optJSONArray("stocks");
+          serverPreClose=c.optJSONArray("stocks")==null?new org.json.JSONArray():c.optJSONArray("stocks");
+          serverMisses=d.optJSONArray("items")==null?new org.json.JSONArray():d.optJSONArray("items");
+          serverLastSuccessMs=System.currentTimeMillis();serverError="";
+        }
+        render();
+      });
+    });
+  }
+  private void renderServer(){
+    page.addView(text("NSE-WIDE DISCOVERY · SERVER",15,BLUE,true));gap(page,7);
+    LinearLayout status=card();
+    status.addView(text(serverError.isEmpty()?"Scanner status received":serverError,13,serverError.isEmpty()?GREEN:AMBER,true));
+    gap(status,6);
+    status.addView(text("Last Android synchronization: "+clock(serverLastSuccessMs),12,MUTED,false));
+    int count=serverStatus.optInt("universeSymbols",0);
+    int ltp=serverStatus.optInt("freshLtpSymbols",0),days=serverStatus.optInt("historicalTradingDays",0);
+    status.addView(text("Loaded EQ stocks: "+count+" · Fresh LTP: "+ltp+
+       " · EOD history trading days: "+days,13,INK,false));
+    boolean wide=serverStatus.optBoolean("fullUniverseClaimsValid",false);
+    status.addView(text(wide?"Coverage check: ≥3,000 symbols, ≥90% live prices, 60+ historical dates":
+      "Coverage not ready: verify NSE universe, at least 60 prior EOD sessions and Groww LTP connection",
+      12,wide?GREEN:AMBER,false));
+    JSONObject last=serverStatus.optJSONObject("latestScan");
+    if(last!=null){
+      status.addView(text("Last completed scan: "+clock(last.optLong("at_ms",0))+
+         " · "+last.optString("window")+" · eligible "+last.optInt("eligible")+
+         " · total "+last.optInt("universe_total"),12,MUTED,false));
+    }else status.addView(text("No recorded universe scan yet",12,AMBER,false));
+    status.addView(text("Frozen Alpha-30: "+serverStatus.optString("modelVersion","unknown")+
+      " · BUY signal unavailable until all execution gates are verified",12,AMBER,true));
+    page.addView(btn("Refresh server",this::fetchServer),new LinearLayout.LayoutParams(-1,dp(42)));
+    gap(page,10);
+    page.addView(text("DISCOVERED CANDIDATES · NOT BUY SIGNALS",12,BLUE,true));gap(page,7);
+    if(serverStocks.length()==0){
+      LinearLayout c=card();
+      c.addView(text("No verified ranked candidates",15,INK,true));
+      c.addView(text("The server needs a loaded EQ security master, 60+ complete EOD sessions per stock and a Groww data connection. It will not invent a top three.",12,AMBER,false));
+    }
+    for(int i=0;i<serverStocks.length();i++){
+      JSONObject r=serverStocks.optJSONObject(i);if(r==null)continue;
+      JSONObject details=r.optJSONObject("details");if(details==null)details=new JSONObject();
+      LinearLayout c=card();
+      c.addView(text("#"+(i+1)+"  "+r.optString("symbol")+" · "+r.optString("stage"),16,INK,true));gap(c,6);
+      c.addView(text("Observed price: "+format(r.optDouble("price",Double.NaN))+
+         " · 20-session breakout "+format(r.optDouble("breakoutLevel",Double.NaN)),14,BLUE,true));
+      c.addView(text("Distance above breakout "+one(details.optDouble("distancePct",Double.NaN))+
+        "% · daily momentum "+one(details.optDouble("momentumPct",Double.NaN))+"%",12,MUTED,false));
+      c.addView(text("Technical discovery rank "+one(r.optDouble("preliminaryRank",Double.NaN))+
+       "/100 — NOT Alpha-30 score",12,AMBER,true));
+      double score=r.optDouble("alpha30Score",Double.NaN);
+      c.addView(text("Frozen model: "+(Double.isFinite(score)?one(score):"INCOMPLETE")+
+        " · feature coverage "+one(r.optDouble("coverage_pct",Double.NaN))+"%",12,MUTED,false));
+      c.addView(text("Data observed: "+clock(details.optLong("dataAsOfMs",0))+
+        " · quote time verified: "+(!r.optBoolean("quoteStale",true)),11,MUTED,false));
+      c.addView(text("NO SIGNAL · needs complete point-in-time data and executable risk checks",12,AMBER,true));
+    }
+    gap(page,5);page.addView(text("PRE-CLOSE REVIEWS",12,BLUE,true));gap(page,6);
+    if(serverPreClose.length()==0)page.addView(text("No pre-close server snapshot stored yet.",12,MUTED,false));
+    else{
+      for(int i=0;i<Math.min(5,serverPreClose.length());i++){
+        JSONObject j=serverPreClose.optJSONObject(i);if(j==null)continue;
+        page.addView(text(j.optString("symbol")+" · "+j.optString("window")+
+         " · "+format(j.optDouble("price",Double.NaN)),12,INK,false));
+      }
+    }
+    gap(page,8);page.addView(text("MISSED-MOVER AUDIT (5 completed sessions)",12,BLUE,true));gap(page,5);
+    if(serverMisses.length()==0)page.addView(text("No complete 5-session outcome records yet.",12,MUTED,false));
+    for(int i=0;i<Math.min(10,serverMisses.length());i++){
+      JSONObject j=serverMisses.optJSONObject(i);if(j==null)continue;
+      page.addView(text(j.optString("symbol")+" · "+j.optString("day")+
+        " · peak "+one(j.optDouble("peak_return_pct",Double.NaN))+
+        "% · "+(j.optInt("captured")==1?"SHORTLISTED":"MISSED"),12,INK,false));
+    }
+    gap(page,6);
+    page.addView(text("The independently deployed server continues scanning when this phone is closed. This screen refreshes periodically while visible; instant device push alerts still require a configured push channel.",12,MUTED,false));
+  }
+
   private void selectTab(String tab){activeTab=tab;render();}
   private void renderRunners(){
     page.addView(text("RUNNERS & LATE DISCOVERIES",15,BLUE,true));gap(page,7);

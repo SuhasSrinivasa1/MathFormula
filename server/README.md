@@ -11,6 +11,19 @@ Read-only NSE cash-equity discovery service, independently running from the phon
 - Optional sourced events CSV `symbol,event_type,title,published_at_utc,scheduled_date,source_url`; event `published_at_utc` must be real dissemination time with timezone.
 - Optional sourced 30-factor CSV `symbol,factor,value,observed_at_utc,source`; values 0..1, with past observed timestamps and provenance.
 
+## Official NSE file automation
+With `AUTO_NSE_IMPORT=1`, the worker attempts the NSE EQ master at 08:00 IST
+and the completed NSE full-bhavdata report at 16:45, 17:45 and 19:15 IST.
+NSE network access and any applicable license are required; failures are reported.
+The turnover in the full-bhavdata report is expressed in **lakhs of rupees** and is
+converted to INR before 20-session average traded-value checks. Schema/date
+validation fails closed.
+
+For INITIAL 60+ sessions, run `docker compose run --rm scanner python -m mathformula bootstrap-eod`
+after setting your deployment data volume and accepting permitted data usage.
+This attempts at most 130 calendar days of official full-bhavdata archives and skips
+unavailable exchange holidays; it is not a substitute for a reliable licensed EOD provider.
+
 ## Deploy
 ```sh
 cd server

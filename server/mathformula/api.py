@@ -68,9 +68,12 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200,{"modelVersion":VERSION,"dataSource":"Groww LTP + imported dated NSE EOD",
                        "count":len(rows),"stocks":rows,"researchOnly":True});return
                 if path=="/v1/preclose":
-                    rows=_rows(conn,"""SELECT * FROM candidates WHERE day=(SELECT MAX(day) FROM candidates
-                       WHERE window LIKE 'PRE_CLOSE%') AND window LIKE 'PRE_CLOSE%'
-                       ORDER BY created_ms DESC,rank_score DESC LIMIT 30""")
+                    rows=_rows(conn,"""SELECT c.* FROM candidates c
+                      WHERE c.day=(SELECT day FROM candidate_scans WHERE window LIKE 'PRE_CLOSE%'
+                         ORDER BY at_ms DESC LIMIT 1)
+                        AND c.window=(SELECT window FROM candidate_scans WHERE window LIKE 'PRE_CLOSE%'
+                         ORDER BY at_ms DESC LIMIT 1)
+                      ORDER BY c.rank_score DESC LIMIT 30""")
                     for r in rows:r["details"]=json.loads(r["details"])
                     self._send(200,{"modelVersion":VERSION,"stocks":rows,"researchOnly":True});return
                 if path=="/v1/events":

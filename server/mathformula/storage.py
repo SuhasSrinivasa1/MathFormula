@@ -30,9 +30,13 @@ horizon INTEGER NOT NULL,peak_return_pct REAL NOT NULL,close_return_pct REAL NOT
 captured INTEGER NOT NULL,computed_ms INTEGER NOT NULL,PRIMARY KEY(day,window,symbol,horizon));
 """
 def ms(): return int(time.time()*1000)
+class _ClosingConnection(sqlite3.Connection):
+    def __exit__(self, exc_type, exc, tb):
+        try:return super().__exit__(exc_type,exc,tb)
+        finally:self.close()
 def db(path):
     Path(path).parent.mkdir(parents=True,exist_ok=True)
-    conn=sqlite3.connect(path,timeout=30)
+    conn=sqlite3.connect(path,timeout=30,factory=_ClosingConnection)
     conn.row_factory=sqlite3.Row
     conn.executescript(SCHEMA)
     return conn

@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from .storage import db,ms,audit,import_universe,import_eod,import_events,import_factors
 from .discovery import shortlist
 from .groww import Groww,GrowwError
+from .nse_import import fetch_universe,fetch_daily
 IST=ZoneInfo("Asia/Kolkata")
 LOG=logging.getLogger("mathformula")
 def local_now():return datetime.now(IST)
@@ -170,6 +171,25 @@ class Scanner:
         now=local_now()
         # Re-check imported files once per minute, even after close.
         if self.due("files",now,True):self.poll_input_files()
+        if os.getenv("AUTO_NSE_IMPORT","0")=="1":
+            if self.due("nse_universe",now,(now.hour,now.minute)==(8,0)):
+                try:
+                    target=os.getenv("UNIVERSE_FILE","/data/universe.csv")
+                    count=fetch_universe(target)
+                    LOG.info("Official NSE equity list downloaded: %d raw rows",count)
+                    self.poll_input_files()
+                except Exception as exc:
+                    self.latest_error="NSE instruments auto-import unavailable: "+type(exc).__name__
+                    LOG.warning("NSE universe auto-fetch unavailable (%s)",type(exc).__name__)
+            if self.due("nse_eod",now,(now.hour,now.minute) in {(16,45),(17,45),(19,15)}):
+                today=now.date()
+                try:
+                    count=fetch_daily(today,os.getenv("EOD_DIR","/data/eod"))
+                    LOG.info("Official NSE EOD %s fetched %d EQ rows",today.isoformat(),count)
+                    self.poll_input_files()
+                except Exception as exc:
+                    self.latest_error="NSE EOD not published or not accessible: "+type(exc).__name__
+                    LOG.warning("NSE bhavdata unavailable (%s)",type(exc).__name__)
         if self.allowed(now):
             accelerated=now.time()>=clock(14,30)
             every=5 if accelerated else 15
