@@ -15,7 +15,7 @@ import java.util.Set;
  * This NEVER generates BUY: frozen Alpha-30 mandatory inputs are not available
  * in the phone-only technical feed. A price crossing resistance is not a BUY.
  *
- * Only completed discovery scans can replace a shortlist. Quote refreshes may
+ * Ranking changes never imply a closed/failed BUY. Only a verified server may close a signal. Quote refreshes may
  * annotate an existing watch, but never fabricate a full model decision.
  */
 final class RecommendationLedger {
@@ -116,13 +116,13 @@ final class RecommendationLedger {
         "Resistance crossed; full Alpha-30 verification, VWAP and risk/reward still incomplete":
         "Forward-looking technical watch; breakout and complete Alpha-30 gates pending");
       if(old==null)set(row,"firstSeenStage",crossed?"AFTER CROSS":"BEFORE CROSS");
-      if(hasThreeSessionsElapsed(started,now)) {
-        archive.put(finish(row,"EXPIRED",
-          "Research watch exceeded three weekday sessions; exchange holidays require server verification",now));
-      } else if(crossed && Double.isFinite(distance)&&distance>4.0) {
-        archive.put(finish(row,"ENTRY_MISSED",
-          "Breakout already more than 4% above original resistance; do not chase. No BUY was verified",now));
-      } else next.put(row);
+      // A local device cannot verify the NSE holiday calendar or full model.
+      // Do NOT close a watch on a weekday guess or an arbitrary 4% extension.
+      if(crossed && Double.isFinite(distance)&&distance>4.0) {
+        set(row,"status","EXTENDED · REVALIDATE");
+        set(row,"reason","Extended beyond resistance. Entry is not verified; calculate full net risk/reward on the server.");
+      }
+      next.put(row);
     }
     for(int j=0;j<former.length();j++){
       JSONObject old=former.optJSONObject(j);
@@ -130,14 +130,9 @@ final class RecommendationLedger {
       JSONObject updated=copy(old);
       int missed=old.optInt("missedScans",0)+1;
       set(updated,"missedScans",missed);
-      if(missed>=2){
-        archive.put(finish(updated,"NO_LONGER_SHORTLISTED",
-          "Absent from two completed top-three discovery scans. This does not prove a failed Alpha-30 factor",now));
-      } else {
-        set(updated,"status","REVALIDATION PENDING");
-        set(updated,"reason","Not in latest top three; awaiting a second completed scan");
-        next.put(updated);
-      }
+      set(updated,"status","REVALIDATION PENDING");
+      set(updated,"reason","Not in latest top three. Rank loss alone cannot invalidate an opportunity.");
+      next.put(updated);
     }
     store(next,archive);
   }
@@ -165,8 +160,9 @@ final class RecommendationLedger {
             set(row,"price",price);set(row,"tradeMs",trade);
             set(row,"distancePct",gap);set(row,"lastSeenAtMs",now);
             if(gap>4.0){
-              archive.put(finish(row,"ENTRY_MISSED",
-                "Price has advanced more than 4% beyond verified resistance; avoid chasing an unverified entry",now));
+              set(row,"status","EXTENDED · REVALIDATE");
+              set(row,"reason","Price extended beyond resistance; the server must verify executable risk/reward.");
+              next.put(row);
               continue;
             }
             if(gap>=0) {
