@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.MathFormula" parent="Theme.Material3.Light.NoActionBar">
+        <item name="colorPrimary">#21588F</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">#D7E8FA</item>
+        <item name="colorOnPrimaryContainer">#103455</item>
+        <item name="colorSecondary">#277C70</item>
+        <item name="colorOnSecondary">#FFFFFF</item>
+        <item name="colorSurface">#FFFFFF</item>
+        <item name="colorOnSurface">#17283B</item>
+        <item name="colorSurfaceVariant">#EEF3F8</item>
+        <item name="colorOnSurfaceVariant">#536678</item>
+        <item name="colorOutline">#D9E1E9</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">#F7F9FC</item>
+        <item name="android:navigationBarColor">#F7F9FC</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="materialButtonStyle">@style/Widget.Material3.Button</item>
+        <item name="materialCardViewStyle">@style/Widget.Material3.CardView.Elevated</item>
+    </style>
+</resources>
