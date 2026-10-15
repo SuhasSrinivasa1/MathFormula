@@ -54,6 +54,7 @@ public final class HomeActivity extends Activity {
   private SecureGrowwStore secrets;
   private GrowwReadOnlyClient groww;
   private LinearLayout root;
+  private ScrollView mainScroll;
   private String section="LIVE",scanProgress="";
   private boolean busy=false,quoteBusy=false,priorityBusy=false,radarBusy=false;
   private long lastPriorityAttempt=0;
@@ -131,7 +132,7 @@ public final class HomeActivity extends Activity {
     section="LIVE"; // Recommendation lifecycle is independent of market open/close.
     getWindow().setStatusBarColor(Color.rgb(247,249,252));
     getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
-    ScrollView scroll=new ScrollView(this);
+    ScrollView scroll=new ScrollView(this);mainScroll=scroll;
     scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(247,249,252));
     root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);
     root.setPadding(dp(20),dp(23),dp(20),dp(32));
@@ -1020,10 +1021,15 @@ public final class HomeActivity extends Activity {
   }
   private void render(){
     if(root==null)return;
+    final int previousScroll=mainScroll==null?0:mainScroll.getScrollY();
     root.removeAllViews();tabHeader();
     scanStatusCard();
     if("CLOSED".equals(section))renderClosed();
     else renderLive();
+    // Preserve reading position across 30-second quote/health UI refreshes.
+    if(mainScroll!=null&&previousScroll>0){
+      mainScroll.post(()->mainScroll.scrollTo(0,previousScroll));
+    }
   }
   private void exportLogs(){
     Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
