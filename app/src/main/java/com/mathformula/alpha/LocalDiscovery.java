@@ -121,6 +121,73 @@ final class LocalDiscovery {
     historyCache.edit().putString(symbol,cache.toString()).apply();
     return h;
   }
+  static boolean overnightResearchWindow(){
+    java.time.LocalTime clock=java.time.Instant.now().atZone(IST).toLocalTime();
+    // Freeze the candidate universe before NSE pre-open starts.
+    return !clock.isBefore(java.time.LocalTime.of(16,30)) ||
+        clock.isBefore(java.time.LocalTime.of(7,30));
+  }
+  boolean completedForCurrentEod(){
+    JSONObject last=latest();
+    return "NEXT_SESSION_RESEARCH".equals(last.optString("scanMode")) &&
+       cacheCutoffDate().equals(last.optString("researchCutoffDate")) &&
+       last.optBoolean("completedFullResearch",false);
+  }
+  JSONArray priorityWatchlist(){
+    try{return new JSONArray(prefs.getString("overnightPriority50","[]"));}
+    catch(Exception ignored){return new JSONArray();}
+  }
+  JSONObject priorityLatest(){
+    try{return new JSONObject(prefs.getString("priorityLatest","{}"));}
+    catch(Exception ignored){return new JSONObject();}
+  }
+  void refreshPriority(GrowwReadOnlyClient api) throws Exception {
+    if(!MarketSchedule.weekdayTradingTime(System.currentTimeMillis()))return;
+    JSONArray pool=priorityWatchlist();
+    ArrayList<String> list=new ArrayList<>();
+    for(int i=0;i<pool.length()&&list.size()<50;i++){
+      String sym=pool.optString(i,"");
+      if(sym.matches("[A-Z0-9&-]{1,26}")&&!list.contains(sym))list.add(sym);
+    }
+    if(list.isEmpty())return;
+    JSONObject prices=api.batch("ltp",list);
+    JSONObject safe=new JSONObject();
+    for(String symbol:list){
+      double value=prices.optDouble("NSE_"+symbol,Double.NaN);
+      if(Double.isFinite(value)&&value>0)safe.put(symbol,value);
+    }
+    prefs.edit().putString("priorityLatest",new JSONObject()
+      .put("observedMs",System.currentTimeMillis())
+      .put("requested",list.size()).put("received",safe.length())
+      .put("prices",safe).put("note","LTP polling time is NOT exchange trade time and NOT Alpha-30 BUY evidence")
+      .toString()).apply();
+  }
+  private static JSONObject jsonBroad(Broad b) throws Exception {
+    return new JSONObject().put("symbol",b.symbol).put("price",b.price)
+      .put("open",b.open).put("high",b.high).put("low",b.low)
+      .put("move",b.move).put("location",b.location).put("rank",b.rank);
+  }
+  private static Broad parseBroad(JSONObject j){
+    Broad b=new Broad();b.symbol=j.optString("symbol","");
+    b.price=j.optDouble("price",Double.NaN);b.open=j.optDouble("open",Double.NaN);
+    b.high=j.optDouble("high",Double.NaN);b.low=j.optDouble("low",Double.NaN);
+    b.move=j.optDouble("move",Double.NaN);
+    b.location=j.optDouble("location",Double.NaN);
+    b.rank=j.optDouble("rank",Double.NaN);
+    return b;
+  }
+  private JSONObject historyJournal(String session){
+    try{
+      if(session.equals(prefs.getString("overnightJournalSession","")))
+        return new JSONObject(prefs.getString("overnightJournal","{}"));
+    }catch(Exception ignored){}
+    return new JSONObject();
+  }
+  private void persistJournal(String session,JSONObject journal){
+    // Android cancellation/restart resumes at the next unscreened candidate.
+    prefs.edit().putString("overnightJournalSession",session)
+      .putString("overnightJournal",journal.toString()).commit();
+  }
   boolean scanning(){return RUNNING.get();}
   private String istDate(long timestamp) {
     return java.time.Instant.ofEpochMilli(timestamp).atZone(IST).toLocalDate().toString();
