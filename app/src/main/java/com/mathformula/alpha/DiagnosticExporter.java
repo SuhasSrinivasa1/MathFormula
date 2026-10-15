@@ -118,7 +118,7 @@ final class DiagnosticExporter {
           countLines(recent),countLines(events)).toString(2));
         entry(zip,"fixed_formula.json",modelSpec().toString(2));
         JSONObject quota=new JSONObject().put("rules",GrowwQuota.policy())
-          .put("localCounters",GrowwQuota.counters())
+          .put("localCounters",GrowwQuota.counters(ctx))
           .put("lastResearchAlertCheckMs",ResearchAlerts.lastCheck(ctx))
           .put("lastResearchAlertResult",ResearchAlerts.lastState(ctx))
           .put("notificationsEnabled",ResearchAlerts.permission(ctx))
