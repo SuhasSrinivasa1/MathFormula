@@ -84,6 +84,18 @@ public class Alpha30EngineTest {
     assertNotEquals(Alpha30Engine.Decision.BUY_ELIGIBLE,
       Alpha30Engine.evaluate(s,now).decision);
   }
+  @Test public void nextSessionHigh20IncludesYesterdayAndDropsOldest(){
+    double[] prior=new double[21];
+    Arrays.fill(prior,90.0);prior[0]=200.0;prior[20]=105.0;
+    // Oldest observation must not be reused as today's resistance.
+    assertEquals(105.0,Alpha30ReferenceMath.completedHigh20(
+      Arrays.copyOfRange(prior,1,21)),0.0001);
+    assertEquals(Double.NaN,Alpha30ReferenceMath.completedHigh20(new double[]{1.0}),0.0);
+  }
+  @Test public void completedEodCloseLocationOnly(){
+    assertEquals(0.75,Alpha30ReferenceMath.closeLocation(120,100,115),0.00001);
+    assertTrue(Double.isNaN(Alpha30ReferenceMath.closeLocation(100,100,100)));
+  }
   @Test public void riskOffVetoBlocksBuy(){
     long now=sessionTime(10,0);
     Alpha30Engine.Snapshot s=allGates(now);s.marketRegimeClear=false;
