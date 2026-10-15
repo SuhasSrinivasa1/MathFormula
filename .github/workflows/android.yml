@@ -4,8 +4,8 @@ on:
     branches: [main, 'feat/**', 'fix/**']
   workflow_dispatch:
 concurrency:
-  group: mathformula-v31-${{ github.sha }}
-  cancel-in-progress: false
+  group: mathformula-v31-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   android:
     runs-on: ubuntu-latest
