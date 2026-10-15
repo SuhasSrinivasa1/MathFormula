@@ -4,7 +4,7 @@ on:
     branches: [main, 'feat/**']
   workflow_dispatch:
 concurrency:
-  group: mathformula-v24-${{ github.sha }}
+  group: mathformula-v29-${{ github.sha }}
   cancel-in-progress: false
 jobs:
   android:
@@ -47,27 +47,27 @@ jobs:
       - name: Compile release
         env:
           MATHFORMULA_RELEASE_PASSWORD: ${{ secrets.MATHFORMULA_RELEASE_PASSWORD }}
-        run: gradle --no-daemon :app:assembleRelease
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
       - name: Stage APK
         run: |
           if [[ "$STABLE_SIGNING_CONFIGURED" == "true" ]]; then
-            cp app/build/outputs/apk/release/app-release.apk MathFormula-v2.8.0-Stable.apk
+            cp app/build/outputs/apk/release/app-release.apk MathFormula-v2.9.0-Stable.apk
           else
-            cp app/build/outputs/apk/release/app-release-unsigned.apk MathFormula-v2.8.0-UNSIGNED.apk
+            cp app/build/outputs/apk/release/app-release-unsigned.apk MathFormula-v2.9.0-UNSIGNED.apk
           fi
       - name: Upload stable signed release APK
         if: env.STABLE_SIGNING_CONFIGURED == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: MathFormula-v2.8.0-Stable
-          path: MathFormula-v2.8.0-Stable.apk
+          name: MathFormula-v2.9.0-Stable
+          path: MathFormula-v2.9.0-Stable.apk
           if-no-files-found: error
       - name: Upload unsigned release for secure offline signing
         if: env.STABLE_SIGNING_CONFIGURED != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: MathFormula-v2.8.0-UNSIGNED
-          path: MathFormula-v2.8.0-UNSIGNED.apk
+          name: MathFormula-v2.9.0-UNSIGNED
+          path: MathFormula-v2.9.0-UNSIGNED.apk
           if-no-files-found: error
       - name: Stage Android SDK signing utility for local signing
         if: env.STABLE_SIGNING_CONFIGURED != 'true'
@@ -76,19 +76,19 @@ jobs:
         if: env.STABLE_SIGNING_CONFIGURED != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: MathFormula-v2.8.0-apksigner
+          name: MathFormula-v2.9.0-apksigner
           path: apksigner.jar
           if-no-files-found: error
       - name: Publish signed release only
-        if: env.STABLE_SIGNING_CONFIGURED == 'true' && github.ref == 'refs/heads/feat/v28-overnight-quota-safe'
+        if: env.STABLE_SIGNING_CONFIGURED == 'true' && github.ref == 'refs/heads/fix/v29-stability-audit-20261015'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v2.8.0 >/dev/null 2>&1; then
-            gh release edit v2.8.0 --target "$GITHUB_SHA" --title "MathFormula v2.6 next-session research"
+          if gh release view v2.9.0 >/dev/null 2>&1; then
+            gh release edit v2.9.0 --target "$GITHUB_SHA" --title "MathFormula v2.6 next-session research"
           else
-            gh release create v2.8.0 --target "$GITHUB_SHA" \
+            gh release create v2.9.0 --target "$GITHUB_SHA" \
               --title "MathFormula v2.4 stable-signing baseline" \
               --notes "Persistent Android package and signing identity. Signer certificate must match subsequent updates."
           fi
-          gh release upload v2.8.0 MathFormula-v2.8.0-Stable.apk --clobber
+          gh release upload v2.9.0 MathFormula-v2.9.0-Stable.apk --clobber
