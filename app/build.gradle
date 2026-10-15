@@ -12,6 +12,7 @@ android {
         targetSdk 35
         versionCode 290
         versionName '2.9.0'
+        manifestPlaceholders = [appLabel: 'MathFormula']
     }
     signingConfigs {
         stableRelease {
@@ -25,6 +26,11 @@ android {
         }
     }
     buildTypes {
+        debug {
+            applicationIdSuffix '.qa'
+            versionNameSuffix '-qa'
+            manifestPlaceholders = [appLabel: 'MathFormula QA']
+        }
         release {
             if (stableKeystore && stablePassword) signingConfig signingConfigs.stableRelease
             minifyEnabled false
