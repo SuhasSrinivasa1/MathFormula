@@ -37,8 +37,9 @@ public final class ResearchJob extends JobService {
     if(!new SecureGrowwStore(this).configured())return false;
     boolean open=MarketSchedule.weekdayTradingTime(System.currentTimeMillis());
     java.time.LocalTime clock=java.time.Instant.now().atZone(MarketSchedule.IST).toLocalTime();
-    if(!open && !clock.isBefore(java.time.LocalTime.of(15,30)) &&
-       clock.isBefore(java.time.LocalTime.of(16,30)))return false;
+    // Full universe fetches run ONLY after the daily candle is finalized
+    // and pause 90 minutes before NSE pre-open. During trading monitor 50.
+    if(!open&&!LocalDiscovery.overnightResearchWindow())return false;
     worker.execute(()->{
       try{
         if(!cancelled){
@@ -46,20 +47,22 @@ public final class ResearchJob extends JobService {
           LocalDiscovery discovery=new LocalDiscovery(this);
           // Android may delay this ~15m periodic job. Screen only when stale;
           // the shared quota limiter governs both foreground and background.
-          long previous=discovery.lastScan();
           boolean intraday=MarketSchedule.weekdayTradingTime(System.currentTimeMillis());
-          long age=System.currentTimeMillis()-previous;
-          long cadence=intraday?15*60_000L:4*60*60_000L;
-          if(!discovery.scanning() && (previous==0||age>cadence) &&
-             System.currentTimeMillis()-discovery.lastAttempt()>20*60_000L){
-            try{
-              if(intraday)discovery.scan(client,progress->{});
-              else discovery.scanForNextSession(client,progress->{});
-            }catch(Exception ex){
-              ResearchAlerts.record(this,0,"Background research unavailable; "+ex.getClass().getSimpleName());
+          if(intraday){
+            // At most ONE batched LTP request for the 50 preselected names.
+            try{discovery.refreshPriority(client);}
+            catch(Exception ex){ResearchAlerts.record(this,0,
+              "Priority quote refresh unavailable: "+ex.getClass().getSimpleName());}
+            if(!cancelled)ResearchAlerts.evaluate(this,client,discovery.latest());
+          }else if(LocalDiscovery.overnightResearchWindow() &&
+             !discovery.completedForCurrentEod() && !discovery.scanning() &&
+             System.currentTimeMillis()-discovery.lastAttempt()>45*60_000L){
+            try{discovery.scanForNextSession(client,progress->{});}
+            catch(Exception ex){
+              ResearchAlerts.record(this,0,
+                "Nightly research checkpoint saved: "+ex.getClass().getSimpleName());
             }
           }
-          if(!cancelled && intraday)ResearchAlerts.evaluate(this,client,discovery.latest());
         }
       }finally{
         if(!cancelled)jobFinished(params,false);
