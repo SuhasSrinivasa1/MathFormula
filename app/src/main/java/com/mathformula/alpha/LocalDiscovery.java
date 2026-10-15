@@ -387,6 +387,10 @@ final class LocalDiscovery {
     if(s==null)return "";
     return s.length()>150?s.substring(0,150):s;
   }
+  /** Share the same validated NSE equity universe with the low-cost intraday radar. */
+  List<String> instrumentSymbols(Progress progress) throws Exception {
+    return universe(progress);
+  }
   private List<String> universe(Progress progress) throws Exception{
     File file=new File(app.getFilesDir(),"groww_nse_eq_master_v16.txt");
     long age=System.currentTimeMillis()-file.lastModified();
