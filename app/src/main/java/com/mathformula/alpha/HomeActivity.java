@@ -170,7 +170,7 @@ public final class HomeActivity extends Activity {
   @Override protected void onPause(){handler.removeCallbacks(autoUpdate);super.onPause();}
   @Override protected void onDestroy(){worker.shutdownNow();super.onDestroy();}
   private String serverUrl(){
-    return getPreferences(MODE_PRIVATE).getString("server_url","");
+    return getSharedPreferences("mathformula_shared_runtime_v30",MODE_PRIVATE).getString("server_url","");
   }
   private boolean serverConfigured(){return !serverUrl().isEmpty();}
   private void fetchRemote(){
@@ -1023,7 +1023,7 @@ public final class HomeActivity extends Activity {
           if(symbol.matches("[A-Z0-9&-]{1,26}"))selected.add(symbol);
         }
         DiagnosticExporter.save(getApplicationContext(),uri,new WatchStore(this),selected,
-          getPreferences(MODE_PRIVATE).getString("server_url",""),
+          getSharedPreferences("mathformula_shared_runtime_v30",MODE_PRIVATE).getString("server_url",""),
           secrets.get("server_viewer_token"));
       }catch(Exception e){issue=e.getClass().getSimpleName();}
       String problem=issue;
