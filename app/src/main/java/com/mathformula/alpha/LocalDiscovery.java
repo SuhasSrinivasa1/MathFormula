@@ -702,8 +702,7 @@ final class LocalDiscovery {
         }catch(Exception invalid){
           String code=classify(invalid);
           if("API_RATE_LIMIT".equals(code)||"NETWORK_ERROR".equals(code)||
-             "API_HTTP_ERROR".equals(code)||"HISTORICAL_RESPONSE_MISSING".equals(code)||
-             invalid instanceof InterruptedException){
+             "API_HTTP_ERROR".equals(code)||invalid instanceof InterruptedException){
             retryLater=true;
             countFailure(rejectionReasons,code);
             throw invalid;
