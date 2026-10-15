@@ -122,7 +122,10 @@ final class LocalDiscovery {
         h.previousClose=row.getDouble("previousClose");h.priorHigh20=row.getDouble("priorHigh20");h.nextHigh20=row.getDouble("nextHigh20");
         h.avgVolume20=row.getDouble("avgVolume20");h.avgValue20=row.getDouble("avgValue20");
         h.completedSessions=row.getInt("sessions");
-        if(h.completedSessions>=61&&h.priorHigh20>0&&h.nextHigh20>0)return h;
+        if(h.completedSessions>=61&&h.priorHigh20>0&&h.nextHigh20>0){
+          new Alpha30EvidenceStore(app).recordCompletedClv(symbol,h.sessionDate,h.high,h.low,h.close);
+          return h;
+        }
       }
     }catch(Exception ignored){}
     GrowwReadOnlyClient.NextSessionHistory h=api.nextSessionHistory(symbol);
@@ -133,6 +136,7 @@ final class LocalDiscovery {
       .put("priorHigh20",h.priorHigh20).put("nextHigh20",h.nextHigh20).put("avgValue20",h.avgValue20)
       .put("avgVolume20",h.avgVolume20).put("sessions",h.completedSessions);
     historyCache.edit().putString(symbol,cache.toString()).apply();
+    new Alpha30EvidenceStore(app).recordCompletedClv(symbol,h.sessionDate,h.high,h.low,h.close);
     return h;
   }
   static boolean overnightResearchWindow(){
