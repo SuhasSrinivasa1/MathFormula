@@ -10,12 +10,17 @@ import java.util.ArrayDeque;
  * ScannerService and discovery; all use GrowwReadOnlyClient.call().
  *
  * Groww published REST group limit: LIVE DATA 10/second and 300/minute.
- * Conservative internal budget: 6/sec, 210/min.
- * Historical requests have separate entitlement/limits; also paced conservatively.
+ * Conservative internal budget: 2/sec, 60/min.
+ * Groww does not publish an independent historical/backtesting per-minute quota
+ * on its REST introduction page. Reserve at most 3 historical requests/minute.
+ * External account usage is unknowable; a 429 must halt and cool down.
  * Account-wide usage by other apps/processes is NOT observable here.
  */
 final class GrowwQuota {
-  private static final int LIVE_SECOND=6, LIVE_MINUTE=210, AUTH_DAY=90;
+  private static final int LIVE_SECOND=2, LIVE_MINUTE=60, AUTH_DAY=90;
+  private static final int HISTORY_MINUTE=3;
+  private static final long HISTORY_INTERVAL_MS=21000L;
+  private static final String PREF="mathformula_quota_guard_v28";
   private static final Object LOCK=new Object();
   private static final ArrayDeque<Long> liveSecond=new ArrayDeque<>();
   private static final ArrayDeque<Long> liveMinute=new ArrayDeque<>();
@@ -24,6 +29,12 @@ final class GrowwQuota {
   private static long lastHistorical=0;
   private GrowwQuota(){}
   static void acquire(String path,Context context) throws InterruptedException {
+    // Persist the server-imposed account cooldown across Android process restarts.
+    android.content.SharedPreferences prefs=context.getSharedPreferences(PREF,Context.MODE_PRIVATE);
+    long enforced=prefs.getLong("cooldownWallMs",0L);
+    long remaining=enforced-System.currentTimeMillis();
+    if(remaining>0)throw new IllegalStateException(
+      "Groww API cooldown active; pause scanning for "+((remaining+59999)/60000)+" minutes");
     final boolean auth=path.equals("/v1/token/api/access");
     final boolean live=path.startsWith("/v1/live-data/");
     if(auth){
@@ -56,19 +67,25 @@ final class GrowwQuota {
         }else{
           while(!historicalMinute.isEmpty()&&now-historicalMinute.peekFirst()>=60000)
             historicalMinute.removeFirst();
-          if(hold==0&&historicalMinute.size()<45&&now-lastHistorical>=250){
+          if(hold==0&&historicalMinute.size()<HISTORY_MINUTE&&now-lastHistorical>=HISTORY_INTERVAL_MS){
             historicalMinute.addLast(now);lastHistorical=now;return;
           }
-          sleep=Math.max(hold,Math.max(historicalMinute.size()>=45?
-            60001-(now-historicalMinute.peekFirst()):0,250-(now-lastHistorical)));
+          sleep=Math.max(hold,Math.max(historicalMinute.size()>=HISTORY_MINUTE?
+            60001-(now-historicalMinute.peekFirst()):0,HISTORY_INTERVAL_MS-(now-lastHistorical)));
         }
       }
       Thread.sleep(Math.min(Math.max(50,sleep),2000));
     }
   }
-  static void backoff(){
+  static void backoff(Context context){
+    long now=System.currentTimeMillis();
+    android.content.SharedPreferences prefs=context.getSharedPreferences(PREF,Context.MODE_PRIVATE);
+    long next=Math.max(prefs.getLong("cooldownWallMs",0),now+30*60000L);
+    prefs.edit().putLong("cooldownWallMs",next)
+      .putLong("last429At",now)
+      .putInt("total429",prefs.getInt("total429",0)+1).commit();
     synchronized(LOCK){
-      blockedUntil=Math.max(blockedUntil,SystemClock.elapsedRealtime()+75000);
+      blockedUntil=Math.max(blockedUntil,SystemClock.elapsedRealtime()+30*60000L);
     }
   }
   static org.json.JSONObject policy() throws org.json.JSONException {
@@ -78,7 +95,7 @@ final class GrowwQuota {
       .put("internalLiveRequestsPerSecond",LIVE_SECOND)
       .put("internalLiveRequestsPerMinute",LIVE_MINUTE)
       .put("internalAuthRequestsPerDay",AUTH_DAY)
-      .put("historicalInternalRequestsPerMinute",45)
+      .put("historicalInternalRequestsPerMinute",HISTORY_MINUTE)
       .put("externalAppsIncluded",false);
   }
   static org.json.JSONObject counters() throws org.json.JSONException {
