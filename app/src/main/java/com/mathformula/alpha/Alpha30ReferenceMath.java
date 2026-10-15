@@ -77,6 +77,17 @@ final class Alpha30ReferenceMath {
     return Double.isFinite(commodityChangeFraction)&&Double.isFinite(unhedgedInputShare)?
       commodityChangeFraction*unhedgedInputShare:Double.NaN;
   }
+  /** Highest high across exactly the prior 20 completed NSE daily sessions. */
+  static double completedHigh20(double[] sessionHighs) {
+    if(sessionHighs==null||sessionHighs.length<20)return Double.NaN;
+    double result=Double.NEGATIVE_INFINITY;
+    for(int i=sessionHighs.length-20;i<sessionHighs.length;i++){
+      double high=sessionHighs[i];
+      if(!Double.isFinite(high)||high<=0)return Double.NaN;
+      result=Math.max(result,high);
+    }
+    return result;
+  }
   // T26–T30
   static double timeAdjustedRvol(double currentShares,double normalSharesAtSameTime){
     return safeRatio(currentShares,normalSharesAtSameTime);
