@@ -548,7 +548,9 @@ public final class HomeActivity extends AppCompatActivity {
     String scanner=serverConfigured()?
       remoteConnected?"SERVER LIVE":"SERVER DOWN":
       intradayRadar.fresh()?"RADAR FRESH":intradayRadar.running()?"SCANNING":"PHONE ONLY";
-    String alerts=ResearchAlerts.permission(this)?"ALLOWED":"OFF";
+    boolean firebaseReady=!com.google.firebase.FirebaseApp.getApps(this).isEmpty();
+    String alerts=!ResearchAlerts.permission(this)?"BLOCKED":firebaseReady?
+      "PUSH READY":"LOCAL ONLY";
     String[] labels={"MARKET","GROWW","SCANNER","ALERTS"};
     String[] values={market,growwState,scanner,alerts};
     for(int i=0;i<labels.length;i++){
