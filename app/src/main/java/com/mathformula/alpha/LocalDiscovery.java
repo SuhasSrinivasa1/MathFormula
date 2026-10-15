@@ -455,6 +455,8 @@ final class LocalDiscovery {
   }
   private JSONObject scan(GrowwReadOnlyClient groww,Progress progress,boolean afterHours) throws Exception{
     long scanStarted=System.currentTimeMillis();
+    if(afterHours&&!overnightResearchWindow())
+      throw new IllegalStateException("Full-universe research paused for market session");
     if(!RUNNING.compareAndSet(false,true))throw new IllegalStateException("Discovery scan already active");
     prefs.edit().putLong("lastAttempt",scanStarted)
       .putString("lastAttemptState","Scanning NSE equity universe…").apply();
@@ -553,15 +555,39 @@ final class LocalDiscovery {
         .put("top",preliminary).toString()).apply();
       int toVerify=broad.size();int checked=0,valid=0;
       JSONObject rejectionReasons=new JSONObject();
-      recordProgress("Verifying all broad-qualified NSE stocks",0,toVerify,0,rejectionReasons);
+      JSONObject journal=afterHours?historyJournal(researchSession):new JSONObject();
       List<JSONObject> candidates=new ArrayList<>();
+      recordProgress("Resumable EOD history verification",0,toVerify,0,rejectionReasons);
       for(int i=0;i<toVerify;i++){
-        Broad b=broad.get(i);checked++;
+        Broad b=broad.get(i);
+        if(afterHours&&!overnightResearchWindow()){
+          persistJournal(researchSession,journal);
+          recordProgress("Paused before NSE open",checked,toVerify,valid,rejectionReasons);
+          throw new IllegalStateException("Overnight research paused before trading opens");
+        }
+        if(Thread.currentThread().isInterrupted()){
+          if(afterHours)persistJournal(researchSession,journal);
+          throw new InterruptedException("Interrupted; EOD checkpoint retained");
+        }
+        checked++;
+        if(afterHours){
+          JSONObject saved=journal.optJSONObject(b.symbol);
+          if(saved!=null){
+            JSONObject prior=saved.optJSONObject("candidate");
+            if(prior!=null){candidates.add(prior);valid++;}
+            else countFailure(rejectionReasons,saved.optString("reject","UNCLASSIFIED"));
+            if(checked%10==0)recordProgress("Restored EOD checkpoints",checked,toVerify,valid,rejectionReasons);
+            continue;
+          }
+        }
         if(checked==1||checked%10==0||checked==toVerify){
           progress.update("Verifying NSE daily history "+checked+" / "+toVerify+
             " · "+valid+" validated");
           recordProgress("Historical review",checked,toVerify,valid,rejectionReasons);
         }
+        int priorValid=valid;
+        JSONObject priorRejects=new JSONObject(rejectionReasons.toString());
+        boolean retryLater=false;
         try{
           JSONObject item;
           if(afterHours){
@@ -636,12 +662,37 @@ final class LocalDiscovery {
           }
           candidates.add(item);valid++;
         }catch(SecurityException auth){
+          retryLater=true;
           countFailure(rejectionReasons,"AUTH_REJECTED");throw auth;
         }catch(Exception invalid){
-          countFailure(rejectionReasons,classify(invalid));
+          String code=classify(invalid);
+          if("API_RATE_LIMIT".equals(code)||"NETWORK_ERROR".equals(code)||
+             "API_HTTP_ERROR".equals(code)||invalid instanceof InterruptedException){
+            retryLater=true;
+            countFailure(rejectionReasons,code);
+            throw invalid;
+          }
+          countFailure(rejectionReasons,code);
+        }finally{
+          if(afterHours&&!retryLater){
+            JSONObject entry=new JSONObject();
+            if(valid>priorValid)entry.put("candidate",candidates.get(candidates.size()-1));
+            else{
+              String reason="UNCLASSIFIED";
+              java.util.Iterator<String> codes=rejectionReasons.keys();
+              while(codes.hasNext()){
+                String name=codes.next();
+                if(rejectionReasons.optInt(name)>priorRejects.optInt(name)){reason=name;break;}
+              }
+              entry.put("reject",reason);
+            }
+            journal.put(b.symbol,entry);
+            if(checked%8==0)persistJournal(researchSession,journal);
+          }else if(afterHours)persistJournal(researchSession,journal);
         }
-        Thread.sleep(300);
+        if(afterHours)Thread.sleep(300);
       }
+      if(afterHours)persistJournal(researchSession,journal);
       recordProgress("Complete",checked,toVerify,valid,rejectionReasons);
       if(afterHours && !candidates.isEmpty()){
         // Never mix stale previous-session records with candidates from a newer
@@ -677,6 +728,10 @@ final class LocalDiscovery {
          .put("verificationRejectReasons",rejectionReasons)
          .put("verificationAttempted",checked)
          .put("historicalVerificationCap",0)
+         .put("researchCutoffDate",afterHours?researchSession:"")
+         .put("completedFullResearch",afterHours&&checked==toVerify&&failedBatches==0)
+         .put("priorityCount",priorityWatchlist().length())
+         .put("resumeCheckpoints",afterHours?journal.length():0)
          .put("scanCompleteness",failedBatches==0?
            "All "+checked+" broad-qualified NSE symbols attempted for historical verification":
            "All broad candidates attempted; "+failedBatches+" price batches failed")
