@@ -25,7 +25,7 @@ final class IntradayRadar {
   IntradayRadar(Context c){
     app=c.getApplicationContext();
     prefs=app.getSharedPreferences(PREF,Context.MODE_PRIVATE);
-    history=app.getSharedPreferences("mathformula_eod_cache_v26",Context.MODE_PRIVATE);
+    history=app.getSharedPreferences("mathformula_eod_cache_v31",Context.MODE_PRIVATE);
   }
   private static String date(){
     return LocalDate.now(MarketSchedule.IST).toString();
@@ -114,8 +114,8 @@ final class IntradayRadar {
           boolean verified=refDate.equals(cache.optString("cutoff")) &&
             cache.optInt("sessions",0)>=61 &&
             cache.optDouble("avgValue20",0)>=10_000_000 &&
-            cache.optDouble("priorHigh20",0)>0;
-          double h20=verified?cache.optDouble("priorHigh20"):Double.NaN;
+            cache.optDouble("nextHigh20",0)>0;
+          double h20=verified?cache.optDouble("nextHigh20"):Double.NaN;
           if(verified)cachedReferences++;
           double distance=verified?100*(price/h20-1):Double.NaN;
           // Do not call unknown H20 a breakout. Verified near-breakout candidates
