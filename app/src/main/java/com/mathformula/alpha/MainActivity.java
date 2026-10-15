@@ -90,7 +90,10 @@ public final class MainActivity extends Activity {
   }
   private Button btn(String caption,Runnable action){
     Button b=new Button(this);b.setAllCaps(false);b.setText(caption);
-    b.setTextSize(13);b.setTextColor(Color.WHITE);b.setBackground(background(BLUE,11));
+    b.setTextSize(14);b.setTextColor(Color.WHITE);b.setMinimumHeight(dp(48));
+    b.setBackground(new android.graphics.drawable.RippleDrawable(
+      android.content.res.ColorStateList.valueOf(Color.argb(56,255,255,255)),
+      background(BLUE,11),background(Color.WHITE,11)));
     b.setOnClickListener(v->action.run());return b;
   }
   private void addButtonRow(String a,Runnable ar,String b,Runnable br){
@@ -349,11 +352,11 @@ public final class MainActivity extends Activity {
     alerts.addView(text("Last research alert evaluation: "+clock(ResearchAlerts.lastCheck(this)),11,MUTED,false));
     gap(alerts,9);
     alerts.addView(btn(watchStore.enabled()?"Restart phone monitoring":"Start phone monitoring",
-      this::startMonitoring),new LinearLayout.LayoutParams(-1,dp(45)));
+      this::startMonitoring),new LinearLayout.LayoutParams(-1,dp(48)));
     if(watchStore.enabled()){
       gap(alerts,7);
       alerts.addView(btn("Stop phone monitoring",this::stopMonitoring),
-        new LinearLayout.LayoutParams(-1,dp(41)));
+        new LinearLayout.LayoutParams(-1,dp(48)));
     }
     gap(page,2);
     LinearLayout preference=card();
@@ -362,7 +365,7 @@ public final class MainActivity extends Activity {
     preference.addView(text("Frozen Alpha-30 model · unchanged 30 factors",12,MUTED,false));
     gap(preference,9);
     preference.addView(btn("View all 30 model factors",this::showFactors),
-      new LinearLayout.LayoutParams(-1,dp(43)));
+      new LinearLayout.LayoutParams(-1,dp(48)));
     gap(page,2);
     LinearLayout privacy=card();
     privacy.addView(text("Privacy & diagnostics",18,INK,true));
@@ -370,15 +373,15 @@ public final class MainActivity extends Activity {
     privacy.addView(text("Read-only Groww integration · no order placement · encrypted Android Keystore storage.",12,MUTED,false));
     gap(privacy,9);
     privacy.addView(btn("Export sanitized diagnostics",this::exportLogs),
-      new LinearLayout.LayoutParams(-1,dp(43)));
+      new LinearLayout.LayoutParams(-1,dp(48)));
     gap(privacy,7);
     privacy.addView(btn("View local audit",this::showAudit),
-      new LinearLayout.LayoutParams(-1,dp(43)));
+      new LinearLayout.LayoutParams(-1,dp(48)));
     gap(page,4);
     page.addView(text("Groww provides market data, not every required financial, news and macro factor. Until those are verified, opportunities remain research-only.",11,AMBER,false));
     gap(page,12);
     page.addView(btn("← Back to recommendations",this::finish),
-      new LinearLayout.LayoutParams(-1,dp(43)));
+      new LinearLayout.LayoutParams(-1,dp(48)));
   }
 
   private void drawSaved(String symbol,JSONObject j){
