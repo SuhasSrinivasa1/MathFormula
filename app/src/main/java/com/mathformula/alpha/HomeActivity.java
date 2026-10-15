@@ -1,6 +1,10 @@
 package com.mathformula.alpha;
 
-import android.app.Activity;
+import androidx.appcompat.app.AppCompatActivity;
+import com.google.android.material.card.MaterialCardView;
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.tabs.TabLayout;
+import android.content.res.ColorStateList;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -35,7 +39,7 @@ import org.json.JSONArray;
  * Only two sections: LIVE (current market observations) and CLOSED (completed
  * market-session snapshots). No buttons to refresh, start monitoring, or trade.
  */
-public final class HomeActivity extends Activity {
+public final class HomeActivity extends AppCompatActivity {
   private static final int INK=Color.rgb(20,38,56),BLUE=Color.rgb(24,91,154),
       MUTED=Color.rgb(103,113,127),GREEN=Color.rgb(19,123,85),
       AMBER=Color.rgb(158,98,19),RED=Color.rgb(180,59,58);
@@ -93,10 +97,15 @@ public final class HomeActivity extends Activity {
   }
   private void space(int dp){root.addView(new View(this),new LinearLayout.LayoutParams(1,dp(dp)));}
   private LinearLayout card(){
+    MaterialCardView shell=new MaterialCardView(this);
+    shell.setRadius(dp(20));shell.setCardElevation(dp(2));
+    shell.setCardBackgroundColor(Color.WHITE);
+    shell.setStrokeColor(Color.rgb(227,233,240));shell.setStrokeWidth(dp(1));
     LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);
-    c.setPadding(dp(16),dp(16),dp(16),dp(16));c.setBackground(rounded(Color.WHITE));
-    LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(13);
-    root.addView(c,p);c.setElevation(dp(1));return c;
+    c.setPadding(dp(18),dp(18),dp(18),dp(18));
+    shell.addView(c,new MaterialCardView.LayoutParams(-1,-2));
+    LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(14);
+    root.addView(shell,p);return c;
   }
   private String time(long ms){
     if(ms<=0)return "Not available";
@@ -475,13 +484,11 @@ public final class HomeActivity extends Activity {
         "Next overnight research eligibility: "+time(nextScanTime()),11,BLUE,true));
     }
     spaceIn(c,11);
-    android.widget.Button button=new android.widget.Button(this);
+    MaterialButton button=new MaterialButton(this);
     button.setAllCaps(false);button.setText(serverConfigured()?"Refresh scanner feed":
       safeOvernightWindow()?"Resume overnight full NSE scan":"Refresh selected 50 only");
     button.setTextSize(13);button.setTextColor(Color.WHITE);
-    button.setBackground(new android.graphics.drawable.RippleDrawable(
-      android.content.res.ColorStateList.valueOf(Color.argb(60,255,255,255)),
-      rounded(BLUE),rounded(Color.WHITE)));
+    button.setBackgroundTintList(ColorStateList.valueOf(BLUE));button.setCornerRadius(dp(14));
     button.setEnabled(!busy&&!discovery.scanning()&&!remoteBusy);
     button.setOnClickListener(v->manualScan());
     c.addView(button,new LinearLayout.LayoutParams(-1,dp(48)));
@@ -511,26 +518,25 @@ public final class HomeActivity extends Activity {
     settings.setOnClickListener(v->startActivity(new Intent(this,MainActivity.class)));
     top.addView(settings);root.addView(top);
     space(20);
-    LinearLayout tabs=new LinearLayout(this);tabs.setBackground(rounded(Color.WHITE));
-    tabs.setPadding(dp(4),dp(4),dp(4),dp(4));
-    for(String item:new String[]{"LIVE","CLOSED"}){
-      String caption=item.equals("LIVE")?"Market watch":"History";
-      TextView tab=text(caption,13,item.equals(section)?BLUE:MUTED,item.equals(section));
-      tab.setGravity(Gravity.CENTER);tab.setPadding(dp(6),dp(15),dp(6),dp(15));tab.setMinimumHeight(dp(48));
-      tab.setBackground(rounded(item.equals(section)?Color.rgb(229,240,250):Color.WHITE));
-      LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
-      tabs.addView(tab,lp);
-      tab.setClickable(true);tab.setFocusable(true);
-      tab.setContentDescription("Show "+caption);
-      tab.setBackground(new android.graphics.drawable.RippleDrawable(
-        android.content.res.ColorStateList.valueOf(Color.argb(42,24,91,154)),
-        rounded(item.equals(section)?Color.rgb(229,240,250):Color.WHITE),
-        rounded(Color.WHITE)));
-      tab.setOnClickListener(v->{section=item;render();
-        if(item.equals("LIVE")){ensureFresh();refreshPrices();}
-      });
-    }
-    root.addView(tabs);space(14);
+    TabLayout tabs=new TabLayout(this);
+    tabs.setTabMode(TabLayout.MODE_FIXED);
+    tabs.setTabGravity(TabLayout.GRAVITY_FILL);
+    tabs.setSelectedTabIndicatorColor(BLUE);
+    tabs.setSelectedTabIndicatorHeight(dp(3));
+    tabs.setTabTextColors(MUTED,BLUE);
+    tabs.setBackground(rounded(Color.WHITE));
+    tabs.addTab(tabs.newTab().setText("Market watch"));
+    tabs.addTab(tabs.newTab().setText("History"));
+    if("CLOSED".equals(section))tabs.getTabAt(1).select();
+    tabs.addOnTabSelectedListener(new TabLayout.OnTabSelectedListener(){
+      @Override public void onTabSelected(TabLayout.Tab tab){
+        section=tab.getPosition()==0?"LIVE":"CLOSED";render();
+        if("LIVE".equals(section)){ensureFresh();refreshPrices();}
+      }
+      @Override public void onTabUnselected(TabLayout.Tab tab){}
+      @Override public void onTabReselected(TabLayout.Tab tab){}
+    });
+    root.addView(tabs,new LinearLayout.LayoutParams(-1,dp(56)));space(14);
     systemHealth();
   }
   private void systemHealth(){
@@ -542,7 +548,9 @@ public final class HomeActivity extends Activity {
     String scanner=serverConfigured()?
       remoteConnected?"SERVER LIVE":"SERVER DOWN":
       intradayRadar.fresh()?"RADAR FRESH":intradayRadar.running()?"SCANNING":"PHONE ONLY";
-    String alerts=ResearchAlerts.permission(this)?"ALLOWED":"OFF";
+    boolean firebaseReady=!com.google.firebase.FirebaseApp.getApps(this).isEmpty();
+    String alerts=!ResearchAlerts.permission(this)?"BLOCKED":firebaseReady?
+      "PUSH READY":"LOCAL ONLY";
     String[] labels={"MARKET","GROWW","SCANNER","ALERTS"};
     String[] values={market,growwState,scanner,alerts};
     for(int i=0;i<labels.length;i++){
@@ -775,10 +783,10 @@ public final class HomeActivity extends Activity {
       }
     }
     spaceIn(c,10);
-    android.widget.Button importButton=new android.widget.Button(this);
+    MaterialButton importButton=new MaterialButton(this);
     importButton.setAllCaps(false);
     importButton.setText("Import sourced Alpha-30 factor CSV");
-    importButton.setTextColor(Color.WHITE);importButton.setBackground(rounded(BLUE));
+    importButton.setTextColor(Color.WHITE);importButton.setBackgroundTintList(ColorStateList.valueOf(BLUE));importButton.setCornerRadius(dp(14));
     importButton.setOnClickListener(v->importEvidence());
     c.addView(importButton,new LinearLayout.LayoutParams(-1,dp(48)));
     spaceIn(c,5);

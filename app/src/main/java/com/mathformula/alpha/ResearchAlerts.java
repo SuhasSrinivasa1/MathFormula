@@ -102,6 +102,39 @@ final class ResearchAlerts {
     }
   }
   /**
+   * Current-session, full-universe radar observations. Daily history reference
+   * must already have the exact current H20; alert is ALWAYS research only.
+   */
+  static int evaluateRadar(Context c,GrowwReadOnlyClient client,IntradayRadar radar){
+    if(!MarketSchedule.weekdayTradingTime(System.currentTimeMillis())||!radar.fresh())return 0;
+    JSONArray top=radar.currentCandidates();if(top==null)return 0;
+    int checked=0,errors=0;
+    for(int i=0;i<Math.min(3,top.length());i++){
+      JSONObject candidate=top.optJSONObject(i);
+      if(candidate==null||!candidate.optBoolean("historyVerified"))continue;
+      String symbol=candidate.optString("symbol","");
+      double trigger=candidate.optDouble("breakoutLevel",Double.NaN);
+      if(!symbol.matches("[A-Z0-9&-]{1,26}")||!(trigger>0))continue;
+      try{
+        GrowwReadOnlyClient.Market market=client.quote(symbol);
+        checked++;
+        long now=System.currentTimeMillis();
+        if(market.lastTradeMs<=0||market.lastTradeMs>now+3000||
+            now-market.lastTradeMs>10_000L||market.price<trigger)continue;
+        post(c,symbol,"RADAR_BREAKOUT",
+          "MathFormula · "+symbol+" research breakout",
+          String.format(Locale.US,
+            "Fresh NSE quote ₹%.2f crossed H20 ₹%.2f. Confirm 15m/5m, 30-factor coverage and ALL gates. WATCH only.",
+            market.price,trigger));
+      }catch(SecurityException e){errors++;break;}
+       catch(Exception e){errors++;}
+    }
+    record(c,checked,"Current-session radar examined "+checked+" verified-H20 names; "+
+      errors+" quote errors; no BUY eligibility certified");
+    return checked;
+  }
+
+  /**
    * Alert only when an exchange-time quote is recent AND a prior 20-day
    * breakout reference was actually verified.
    * Passing completed technical candles is a RESEARCH state, never Alpha-30 BUY.
@@ -120,8 +153,17 @@ final class ResearchAlerts {
       if(selection==null)continue;
       String symbol=selection.optString("symbol","");
       long scanAt=universe.optLong("scannedAtMs",0);
+      // Overnight research is intended for the NEXT session. Freshness of each
+      // actual live quote is validated separately; age of EOD analysis is not quote age.
+      long age=System.currentTimeMillis()-scanAt;
       if(!symbol.matches("[A-Z0-9&-]{1,26}") ||
-          scanAt<=0||System.currentTimeMillis()-scanAt>25*60_000L)continue;
+          scanAt<=0||age<0||age>4L*24*60*60*1000L)continue;
+      if("NEXT_SESSION_RESEARCH".equals(universe.optString("scanMode"))){
+        java.time.LocalDate day=java.time.LocalDate.now(MarketSchedule.IST).minusDays(1);
+        while(day.getDayOfWeek()==java.time.DayOfWeek.SATURDAY||
+              day.getDayOfWeek()==java.time.DayOfWeek.SUNDAY)day=day.minusDays(1);
+        if(!day.toString().equals(universe.optString("sourceSessionDate")))continue;
+      }
       double resistance=selection.optDouble("breakoutLevel",Double.NaN);
       if(!Double.isFinite(resistance)||resistance<=0)continue;
       try{

@@ -167,7 +167,7 @@ final class GrowwReadOnlyClient {
   static final class NextSessionHistory {
     String sessionDate;
     long candleMs;
-    double open,high,low,close,volume,previousClose,priorHigh20,avgValue20,avgVolume20;
+    double open,high,low,close,volume,previousClose,priorHigh20,nextHigh20,avgValue20,avgVolume20;
     int completedSessions;
   }
 
@@ -218,6 +218,11 @@ final class GrowwReadOnlyClient {
       h.avgVolume20+=p[5]/20;
       h.avgValue20+=p[4]*p[5]/20;
     }
+    // TODAY's H20 is calculated from the 20 PREVIOUS COMPLETED sessions,
+    // including yesterday's high, rather than the candidate's old breakout H20.
+    double[] completedHighs=new double[20];
+    for(int i=0;i<20;i++)completedHighs[i]=candles.get(n-20+i)[2];
+    h.nextHigh20=Alpha30ReferenceMath.completedHigh20(completedHighs);
     return h;
   }
 

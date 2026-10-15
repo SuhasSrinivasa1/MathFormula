@@ -51,6 +51,37 @@ final class Alpha30EvidenceStore extends SQLiteOpenHelper {
   @Override public void onUpgrade(SQLiteDatabase db,int old,int updated){
     throw new IllegalStateException("Explicit migration required: cannot discard source evidence");
   }
+  /**
+   * The only automatically normalized broker factor currently supported from a
+   * completed Groww daily candle is T29 (close location). Other factors stay
+   * missing until a validated, timestamped and normalized source is available.
+   */
+  synchronized boolean recordCompletedClv(String symbol,String session,double high,
+                                           double low,double close) {
+    if(symbol==null||!symbol.matches("[A-Z0-9&-]{1,26}"))return false;
+    double value=Alpha30ReferenceMath.closeLocation(high,low,close);
+    if(!Double.isFinite(value)||value<0||value>1)return false;
+    try{
+      long published=java.time.LocalDate.parse(session).atTime(16,30)
+        .atZone(MarketSchedule.IST).toInstant().toEpochMilli();
+      long now=System.currentTimeMillis();
+      if(published<=0||published>now)return false;
+      SQLiteDatabase db=getWritableDatabase();
+      // Never overwrite later evidence with older candles.
+      try(Cursor old=db.rawQuery(
+         "SELECT public_ms FROM factor WHERE symbol=? AND factor=29",
+         new String[]{symbol})){
+        if(old.moveToNext()&&old.getLong(0)>published)return false;
+      }
+      ContentValues row=new ContentValues();
+      row.put("symbol",symbol);row.put("factor",29);row.put("value",value);
+      row.put("public_ms",published);
+      row.put("source","https://api.groww.in/v1/historical/candles");
+      db.insertWithOnConflict("factor",null,row,SQLiteDatabase.CONFLICT_REPLACE);
+      return true;
+    }catch(Exception invalid){return false;}
+  }
+
   static final class EvidenceScore {
     final Alpha30Engine.Score overnight;
     final int observed,missing;

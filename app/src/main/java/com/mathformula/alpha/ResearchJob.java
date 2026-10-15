@@ -61,7 +61,10 @@ public final class ResearchJob extends JobService {
             try{discovery.refreshPriority(client);}
             catch(Exception ex){ResearchAlerts.record(this,0,
               "Priority quote refresh unavailable: "+ex.getClass().getSimpleName());}
-            if(!cancelled)ResearchAlerts.evaluate(this,client,discovery.latest());
+            if(!cancelled){
+              ResearchAlerts.evaluate(this,client,discovery.latest());
+              ResearchAlerts.evaluateRadar(this,client,radar);
+            }
           }else if(LocalDiscovery.overnightResearchWindow() &&
              !discovery.completedForCurrentEod() && !discovery.scanning() &&
              System.currentTimeMillis()-discovery.lastAttempt()>45*60_000L){

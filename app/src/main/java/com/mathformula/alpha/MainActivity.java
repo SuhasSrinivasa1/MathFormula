@@ -1,6 +1,11 @@
 package com.mathformula.alpha;
 
-import android.app.Activity;
+import androidx.appcompat.app.AppCompatActivity;
+import com.google.android.material.card.MaterialCardView;
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.textfield.TextInputLayout;
+import com.google.android.material.textfield.TextInputEditText;
+import android.content.res.ColorStateList;
 import android.net.Uri;
 import android.app.AlertDialog;
 import android.os.Bundle;
@@ -35,7 +40,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /** Direct Groww read-only market monitor; no buy/sell APIs or buttons. */
-public final class MainActivity extends Activity {
+public final class MainActivity extends AppCompatActivity {
   private static final int INK=Color.rgb(24,37,55),BLUE=Color.rgb(29,99,169);
   private static final int MUTED=Color.rgb(108,118,132),GREEN=Color.rgb(23,126,90);
   private static final int RED=Color.rgb(183,56,59),AMBER=Color.rgb(164,104,12);
@@ -84,16 +89,19 @@ public final class MainActivity extends Activity {
   }
   private void gap(LinearLayout p,int v){p.addView(new View(this),new LinearLayout.LayoutParams(1,dp(v)));}
   private LinearLayout card(){
+    MaterialCardView shell=new MaterialCardView(this);shell.setRadius(dp(20));
+    shell.setCardElevation(dp(2));shell.setCardBackgroundColor(Color.WHITE);
+    shell.setStrokeColor(Color.rgb(227,233,240));shell.setStrokeWidth(dp(1));
     LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);
-    c.setPadding(dp(16),dp(15),dp(16),dp(15));c.setBackground(background(Color.WHITE,15));
-    LinearLayout.LayoutParams l=new LinearLayout.LayoutParams(-1,-2);l.bottomMargin=dp(12);page.addView(c,l);return c;
+    c.setPadding(dp(18),dp(17),dp(18),dp(17));
+    shell.addView(c,new MaterialCardView.LayoutParams(-1,-2));
+    LinearLayout.LayoutParams l=new LinearLayout.LayoutParams(-1,-2);l.bottomMargin=dp(14);
+    page.addView(shell,l);return c;
   }
   private Button btn(String caption,Runnable action){
-    Button b=new Button(this);b.setAllCaps(false);b.setText(caption);
+    MaterialButton b=new MaterialButton(this);b.setAllCaps(false);b.setText(caption);
     b.setTextSize(14);b.setTextColor(Color.WHITE);b.setMinimumHeight(dp(48));
-    b.setBackground(new android.graphics.drawable.RippleDrawable(
-      android.content.res.ColorStateList.valueOf(Color.argb(56,255,255,255)),
-      background(BLUE,11),background(Color.WHITE,11)));
+    b.setCornerRadius(dp(14));b.setBackgroundTintList(ColorStateList.valueOf(BLUE));
     b.setOnClickListener(v->action.run());return b;
   }
   private void addButtonRow(String a,Runnable ar,String b,Runnable br){
@@ -186,7 +194,7 @@ public final class MainActivity extends Activity {
     return vault.configured() && age>=0 && age<=AUTH_FRESH_MS;
   }
   private EditText passwordField(String placeholder){
-    EditText e=new EditText(this);
+    EditText e=new TextInputEditText(this);
     e.setSingleLine(true);
     e.setTextSize(14);
     e.setTextColor(INK);
@@ -195,9 +203,19 @@ public final class MainActivity extends Activity {
     e.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
     e.setSaveEnabled(false);
     e.setPadding(dp(12),dp(14),dp(12),dp(14));
-    e.setBackground(background(Color.rgb(245,248,252),11));
+    e.setBackground(null);
     e.setHint(placeholder);
     return e;
+  }
+  /** Material 3 outlined credential entry, privacy and accessible hint. */
+  private TextInputLayout credentialBox(EditText entry,String field){
+    TextInputLayout shell=new TextInputLayout(this);
+    shell.setBoxBackgroundMode(TextInputLayout.BOX_BACKGROUND_OUTLINE);
+    shell.setBoxCornerRadii(dp(14),dp(14),dp(14),dp(14));
+    shell.setHint(field);
+    shell.setHelperText("Encrypted on this device · leave blank to keep existing value");
+    shell.addView(entry,new android.widget.FrameLayout.LayoutParams(-1,dp(55)));
+    return shell;
   }
   /** Only save encrypted values; never show credentials or imply authentication. */
   private boolean saveInlineCredentials(){
@@ -326,13 +344,15 @@ public final class MainActivity extends Activity {
     gap(connection,5);
     growwTokenInput=passwordField(vault.get("totp_token").isEmpty()?
       "Enter Groww TOTP token":"Saved securely · leave blank to keep");
-    connection.addView(growwTokenInput,new LinearLayout.LayoutParams(-1,dp(53)));
+    connection.addView(credentialBox(growwTokenInput,"Groww API token"),
+       new LinearLayout.LayoutParams(-1,-2));
     gap(connection,13);
     connection.addView(text("2 · Groww Base32 TOTP secret",13,INK,true));
     gap(connection,5);
     growwSecretInput=passwordField(vault.get("totp_secret").isEmpty()?
       "Enter Base32 TOTP secret":"Saved securely · leave blank to keep");
-    connection.addView(growwSecretInput,new LinearLayout.LayoutParams(-1,dp(53)));
+    connection.addView(credentialBox(growwSecretInput,"TOTP Base32 secret"),
+       new LinearLayout.LayoutParams(-1,-2));
     gap(connection,6);
     connection.addView(text("Fields are masked. Saved values stay encrypted on this device; empty fields preserve saved values.",11,MUTED,false));
     gap(connection,14);
@@ -357,6 +377,12 @@ public final class MainActivity extends Activity {
       ResearchAlerts.permission(this)?GREEN:AMBER,true));
     gap(alerts,5);
     alerts.addView(text("Research alerts use direct Groww market data. Phone monitoring is best-effort and can stop in the background. No unverified BUY signals.",12,MUTED,false));
+    gap(alerts,6);
+    boolean firebaseReady=!com.google.firebase.FirebaseApp.getApps(this).isEmpty();
+    alerts.addView(text(firebaseReady?
+      "Firebase receiver initialized. Closed-phone push still requires sender authentication and device-token registration.":
+      "Cloud push NOT CONFIGURED. Local Android alerts require the app or a scheduled job to execute; Vivo sleep can delay them.",
+      12,firebaseReady?GREEN:AMBER,true));
     gap(alerts,7);
     alerts.addView(text("Last research alert evaluation: "+clock(ResearchAlerts.lastCheck(this)),11,MUTED,false));
     gap(alerts,9);

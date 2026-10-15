@@ -6,12 +6,15 @@
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
   <application android:label="${appLabel}" android:allowBackup="false"
-    android:usesCleartextTraffic="false" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+    android:usesCleartextTraffic="false" android:theme="@style/Theme.MathFormula">
     <activity android:name=".MainActivity" android:exported="false"/>
     <activity android:name=".HomeActivity" android:exported="true">
       <intent-filter><action android:name="android.intent.action.MAIN"/>
         <category android:name="android.intent.category.LAUNCHER"/></intent-filter>
     </activity>
+    <service android:name=".MathFormulaMessagingService" android:exported="false">
+      <intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT"/></intent-filter>
+    </service>
     <service android:name=".ResearchJob" android:exported="true"
       android:permission="android.permission.BIND_JOB_SERVICE"/>
     <service android:name=".ScannerService" android:exported="false"
