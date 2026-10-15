@@ -931,7 +931,7 @@ public final class HomeActivity extends Activity {
       String issue=null;
       try{
         // Legacy manually watched symbols are diagnostic history, not active Top 3.
-        String manual=getPreferences(MODE_PRIVATE).getString("watchlist","TARIL,GAEL,ADVANCE");
+        String manual=getPreferences(MODE_PRIVATE).getString("watchlist","");
         List<String> selected=new ArrayList<>();
         for(String entry:manual.split(",")){
           String symbol=entry.trim();
