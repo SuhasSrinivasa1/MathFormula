@@ -367,6 +367,30 @@ public final class MainActivity extends Activity {
       alerts.addView(btn("Stop phone monitoring",this::stopMonitoring),
         new LinearLayout.LayoutParams(-1,dp(48)));
     }
+    gap(alerts,8);
+    alerts.addView(btn("Open phone battery settings",()->{
+      try{
+        Intent details=new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+        details.setData(Uri.parse("package:"+getPackageName()));
+        startActivity(details);
+      }catch(Exception ex){
+        Toast.makeText(this,"Open Vivo Settings → Apps → MathFormula QA → Battery",
+          Toast.LENGTH_LONG).show();
+      }
+    }),new LinearLayout.LayoutParams(-1,dp(48)));
+    gap(alerts,5);
+    alerts.addView(text("Battery restrictions can defer local scanning. Allow foreground operation if supported; a server is still required for reliable closed-phone coverage.",11,MUTED,false));
+    gap(page,2);
+    LinearLayout server=card();
+    server.addView(text("Independent NSE scanner",18,INK,true));
+    gap(server,7);
+    server.addView(text(serverUrl().isEmpty()?
+      "Not configured · reliable closed-phone full-universe scanning requires a separate server.":
+      "Configured · "+serverUrl()+" · connectivity must be verified",
+      12,serverUrl().isEmpty()?AMBER:MUTED,false));
+    gap(server,9);
+    server.addView(btn("Configure scanner HTTPS access",this::editServer),
+      new LinearLayout.LayoutParams(-1,dp(48)));
     gap(page,2);
     LinearLayout preference=card();
     preference.addView(text("Research preferences",18,INK,true));
@@ -474,7 +498,7 @@ public final class MainActivity extends Activity {
       .setMessage(watchStore.auditText()).setPositiveButton("Close",null).show();
   }
   private String serverUrl(){
-    return getPreferences(MODE_PRIVATE).getString("server_url","");
+    return getSharedPreferences("mathformula_shared_runtime_v30",MODE_PRIVATE).getString("server_url","");
   }
   private void editServer(){
     LinearLayout form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);
@@ -495,12 +519,12 @@ public final class MainActivity extends Activity {
           String effective=token.isEmpty()?vault.get("server_viewer_token"):token;
           if(!base.isEmpty())new BackendReadOnlyClient(base,effective);
           if(!token.isEmpty())vault.put("server_viewer_token",token);
-          getPreferences(MODE_PRIVATE).edit().putString("server_url",base).apply();
+          getSharedPreferences("mathformula_shared_runtime_v30",MODE_PRIVATE).edit().putString("server_url",base).apply();
           serverError=base.isEmpty()?"Server not configured":"Connecting to independent NSE scanner";
           activeTab="SERVER";render();if(!base.isEmpty())fetchServer();
         }catch(Exception ex){serverError="Invalid HTTPS server address or viewer token";render();}
       }).setNeutralButton("Disconnect",(d,w)->{
-        getPreferences(MODE_PRIVATE).edit().remove("server_url").apply();
+        getSharedPreferences("mathformula_shared_runtime_v30",MODE_PRIVATE).edit().remove("server_url").apply();
         serverStocks=new org.json.JSONArray();serverStatus=new JSONObject();serverError="Server disconnected";
         vault.put("server_viewer_token","");render();
       }).setNegativeButton("Cancel",null).show();

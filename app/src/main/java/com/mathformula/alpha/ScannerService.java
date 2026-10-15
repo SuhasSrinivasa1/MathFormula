@@ -143,15 +143,22 @@ public final class ScannerService extends Service {
     org.json.JSONObject record=discovery.latest();
     long stamp=record.optLong("scannedAtMs",0L);
     long age=System.currentTimeMillis()-stamp;
-    if(stamp<=0 || age<0 || age>4L*24*60*60*1000)return symbols;
+    boolean overnightUsable=stamp>0 && age>=0 && age<=4L*24*60*60*1000;
+    // Start with the FRESH intraday breadth leaders; never carry yesterday's names by default.
+    org.json.JSONArray current=new IntradayRadar(this).currentCandidates();
+    if(current!=null)for(int i=0;i<current.length()&&symbols.size()<5;i++){
+      org.json.JSONObject row=current.optJSONObject(i);
+      String name=row==null?"":row.optString("symbol","");
+      if(name.matches("[A-Z0-9&-]{1,26}")&&!symbols.contains(name))symbols.add(name);
+    }
     // Limit individual depth/candle reads; the separate batch refresh covers the priority 50.
-    org.json.JSONArray verified=record.optJSONArray("top");
+    org.json.JSONArray verified=overnightUsable?record.optJSONArray("top"):null;
     if(verified!=null)for(int i=0;i<verified.length()&&symbols.size()<5;i++){
       org.json.JSONObject stock=verified.optJSONObject(i);
       String name=stock==null?"":stock.optString("symbol","");
       if(name.matches("[A-Z0-9&-]{1,26}")&&!symbols.contains(name))symbols.add(name);
     }
-    org.json.JSONArray priority=discovery.priorityWatchlist();
+    org.json.JSONArray priority=overnightUsable?discovery.priorityWatchlist():new org.json.JSONArray();
     for(int i=0;i<priority.length()&&symbols.size()<5;i++){
       String name=priority.optString(i,"");
       if(name.matches("[A-Z0-9&-]{1,26}")&&!symbols.contains(name))symbols.add(name);

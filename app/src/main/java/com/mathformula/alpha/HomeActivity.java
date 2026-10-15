@@ -43,6 +43,7 @@ public final class HomeActivity extends Activity {
   private final Handler handler=new Handler(Looper.getMainLooper());
   private final ExecutorService worker=Executors.newSingleThreadExecutor();
   private LocalDiscovery discovery;
+  private IntradayRadar intradayRadar;
   private RecommendationLedger ledger;
   private Alpha30EvidenceStore evidenceStore;
   private String evidenceImportNote="";
@@ -53,8 +54,9 @@ public final class HomeActivity extends Activity {
   private SecureGrowwStore secrets;
   private GrowwReadOnlyClient groww;
   private LinearLayout root;
+  private ScrollView mainScroll;
   private String section="LIVE",scanProgress="";
-  private boolean busy=false,quoteBusy=false,priorityBusy=false;
+  private boolean busy=false,quoteBusy=false,priorityBusy=false,radarBusy=false;
   private long lastPriorityAttempt=0;
   private long lastQuoteAttempt=0,lastAlertAttempt=0;
   private boolean startedWhileOpen=false;
@@ -66,6 +68,8 @@ public final class HomeActivity extends Activity {
       startedWhileOpen=open;
       if(serverConfigured())fetchRemote();
       else if(open){
+        // Intraday universe quotes must be independently refreshed; EOD history stays frozen.
+        refreshIntradayRadarIfDue();
         // Never reopen all-NSE historical verification during the market session.
         refreshPriorityWatchlist();
         refreshPrices();
@@ -85,14 +89,14 @@ public final class HomeActivity extends Activity {
     return t;
   }
   private GradientDrawable rounded(int fill){
-    GradientDrawable b=new GradientDrawable();b.setColor(fill);b.setCornerRadius(dp(14));return b;
+    GradientDrawable b=new GradientDrawable();b.setColor(fill);b.setCornerRadius(dp(18));return b;
   }
   private void space(int dp){root.addView(new View(this),new LinearLayout.LayoutParams(1,dp(dp)));}
   private LinearLayout card(){
     LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);
     c.setPadding(dp(16),dp(16),dp(16),dp(16));c.setBackground(rounded(Color.WHITE));
     LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(13);
-    root.addView(c,p);return c;
+    root.addView(c,p);c.setElevation(dp(1));return c;
   }
   private String time(long ms){
     if(ms<=0)return "Not available";
@@ -115,6 +119,7 @@ public final class HomeActivity extends Activity {
     super.onCreate(saved);
     secrets=new SecureGrowwStore(this);groww=new GrowwReadOnlyClient(secrets);
     discovery=new LocalDiscovery(this);
+    intradayRadar=new IntradayRadar(this);
     ledger=new RecommendationLedger(this);
     evidenceStore=new Alpha30EvidenceStore(this);
     ResearchAlerts.channel(this);
@@ -127,7 +132,7 @@ public final class HomeActivity extends Activity {
     section="LIVE"; // Recommendation lifecycle is independent of market open/close.
     getWindow().setStatusBarColor(Color.rgb(247,249,252));
     getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
-    ScrollView scroll=new ScrollView(this);
+    ScrollView scroll=new ScrollView(this);mainScroll=scroll;
     scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(247,249,252));
     root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);
     root.setPadding(dp(20),dp(23),dp(20),dp(32));
@@ -166,7 +171,7 @@ public final class HomeActivity extends Activity {
   @Override protected void onPause(){handler.removeCallbacks(autoUpdate);super.onPause();}
   @Override protected void onDestroy(){worker.shutdownNow();super.onDestroy();}
   private String serverUrl(){
-    return getPreferences(MODE_PRIVATE).getString("server_url","");
+    return getSharedPreferences("mathformula_shared_runtime_v30",MODE_PRIVATE).getString("server_url","");
   }
   private boolean serverConfigured(){return !serverUrl().isEmpty();}
   private void fetchRemote(){
@@ -409,6 +414,10 @@ public final class HomeActivity extends Activity {
           discovery.priorityWatchlist().length()+" (not yet refreshed during trading)",11,BLUE,false));
       }
       c.addView(text("Last scan attempt: "+time(discovery.lastAttempt()),12,MUTED,false));
+      c.addView(text("Intraday NSE radar: "+
+        (radarBusy?"RUNNING":intradayRadar.fresh()?"CURRENT":intradayRadar.issue().isEmpty()?"WAITING":"FAILED · "+intradayRadar.issue())+
+        " · last complete "+time(intradayRadar.completedAt()),12,
+        intradayRadar.fresh()?GREEN:AMBER,true));
       c.addView(text("Result: "+discovery.lastAttemptState(),12,
         discovery.error().isEmpty()?MUTED:AMBER,false));
       if("NEXT_SESSION_RESEARCH".equals(discovery.latest().optString("scanMode"))){
@@ -460,7 +469,7 @@ public final class HomeActivity extends Activity {
       }
       spaceIn(c,7);
       c.addView(text("Whole NSE universe: once per completed EOD, only 16:30–07:30 IST; resumable overnight.",11,MUTED,false));
-      c.addView(text("Market hours: batched LTP monitoring of up to 50 shortlisted symbols, plus detailed Top 3 checks.",11,MUTED,false));
+      c.addView(text("Market hours: best-effort 15-minute NSE-wide batch radar plus up to 50 priority quotes and 5 detailed candidates.",11,MUTED,false));
       c.addView(text("Groww historical budget: max 3/min. Existing 429 cooldown: 30 min; other apps share account limits.",11,AMBER,false));
       c.addView(text(nextScanTime()==0?"Next full-universe scan: after 16:30 IST or already complete":
         "Next overnight research eligibility: "+time(nextScanTime()),11,BLUE,true));
@@ -498,6 +507,7 @@ public final class HomeActivity extends Activity {
     settings.setGravity(Gravity.CENTER);
     settings.setPadding(dp(14),dp(10),dp(14),dp(10));
     settings.setBackground(rounded(Color.WHITE));
+    settings.setClickable(true);settings.setFocusable(true);
     settings.setOnClickListener(v->startActivity(new Intent(this,MainActivity.class)));
     top.addView(settings);root.addView(top);
     space(20);
@@ -510,11 +520,42 @@ public final class HomeActivity extends Activity {
       tab.setBackground(rounded(item.equals(section)?Color.rgb(229,240,250):Color.WHITE));
       LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
       tabs.addView(tab,lp);
+      tab.setClickable(true);tab.setFocusable(true);
+      tab.setContentDescription("Show "+caption);
+      tab.setBackground(new android.graphics.drawable.RippleDrawable(
+        android.content.res.ColorStateList.valueOf(Color.argb(42,24,91,154)),
+        rounded(item.equals(section)?Color.rgb(229,240,250):Color.WHITE),
+        rounded(Color.WHITE)));
       tab.setOnClickListener(v->{section=item;render();
         if(item.equals("LIVE")){ensureFresh();refreshPrices();}
       });
     }
-    root.addView(tabs);space(16);
+    root.addView(tabs);space(14);
+    systemHealth();
+  }
+  private void systemHealth(){
+    LinearLayout grid=new LinearLayout(this);
+    grid.setOrientation(LinearLayout.HORIZONTAL);
+    String market=open()?"OPEN":"CLOSED";
+    String growwState=!secrets.configured()?"SETUP":new WatchStore(this).lastPollOk()?
+      "DATA SEEN":"SAVED";
+    String scanner=serverConfigured()?
+      remoteConnected?"SERVER LIVE":"SERVER DOWN":
+      intradayRadar.fresh()?"RADAR FRESH":intradayRadar.running()?"SCANNING":"PHONE ONLY";
+    String alerts=ResearchAlerts.permission(this)?"ALLOWED":"OFF";
+    String[] labels={"MARKET","GROWW","SCANNER","ALERTS"};
+    String[] values={market,growwState,scanner,alerts};
+    for(int i=0;i<labels.length;i++){
+      LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);
+      c.setPadding(dp(8),dp(11),dp(8),dp(11));
+      c.setBackground(rounded(Color.WHITE));
+      c.addView(text(labels[i],9,MUTED,true));
+      c.addView(text(values[i],11,INK,true));
+      LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
+      lp.setMargins(dp(2),0,dp(2),0);grid.addView(c,lp);
+    }
+    root.addView(grid);
+    space(14);
   }
   private void summaryCard(JSONObject scan,boolean closed){
     LinearLayout c=card();
@@ -636,6 +677,10 @@ public final class HomeActivity extends Activity {
       "NO CURRENT VERIFIED BUY · SEE MISSING REQUIREMENTS",
       11,buyNow?GREEN:AMBER,true));
     c.setContentDescription(symbol+" research details");
+    c.setClickable(true);c.setFocusable(true);
+    c.setBackground(new android.graphics.drawable.RippleDrawable(
+      android.content.res.ColorStateList.valueOf(Color.argb(35,24,91,154)),
+      rounded(Color.WHITE),rounded(Color.WHITE)));
     c.setOnClickListener(v->{
       String message="Status: "+stage+"\n\nObserved price: "+money(price)+
         "\nPrior resistance: "+money(j.optDouble("breakoutLevel",Double.NaN))+
@@ -743,6 +788,78 @@ public final class HomeActivity extends Activity {
       spaceIn(c,4);c.addView(text(evidenceImportNote,11,AMBER,false));
     }
   }
+
+  /** Broad live NSE price discovery; this is research ONLY, never a BUY validator. */
+  private void refreshIntradayRadarIfDue(){
+    if(!open()||serverConfigured()||!secrets.configured()||
+       radarBusy||discovery.scanning()||!intradayRadar.due())return;
+    radarBusy=true;
+    worker.execute(()->{
+      String problem="";
+      try{
+        intradayRadar.scan(groww,discovery,update->{});
+      }catch(Exception ex){
+        problem=ex instanceof SecurityException?"Groww approval/authentication required":
+          ex.getMessage()!=null&&ex.getMessage().contains("429")?
+          "Groww quota reached · retry after cooldown":
+          "Market-wide radar interrupted · check scanner health";
+      }
+      final String message=problem;
+      handler.post(()->{
+        radarBusy=false;
+        if(!message.isEmpty())scanProgress=message;
+        render();
+      });
+    });
+  }
+  /** Clear technical-only early discovery, separately from the frozen Alpha-30 BUY engine. */
+  private void radarPanel(){
+    if(serverConfigured()||!open())return;
+    JSONObject snapshot=intradayRadar.latest();
+    JSONArray pool=intradayRadar.currentCandidates();
+    long at=snapshot.optLong("observedMs",0L);
+    if(pool==null||pool.length()==0){
+      if(radarBusy)root.addView(text("Intraday NSE radar · scanning current market breadth…",
+          12,BLUE,true));
+      else if(at>0&&!intradayRadar.fresh())
+        root.addView(text("Intraday NSE radar: last data is stale · no current leads shown.",
+          12,AMBER,true));
+      return;
+    }
+    root.addView(text("Today's fresh NSE discoveries",18,INK,true));
+    space(4);
+    root.addView(text("Screened "+snapshot.optInt("scannedUniverse",0)+
+      " NSE equities · "+snapshot.optInt("quotesLoaded",0)+" prices · "+
+      time(at)+" · "+snapshot.optInt("historicalReferencesMatched",0)+
+      " reusable H20 histories. Strictly research-only; not all 30 factors verified.",
+      11,MUTED,false));
+    space(9);
+    for(int i=0;i<Math.min(5,pool.length());i++){
+      JSONObject lead=pool.optJSONObject(i);
+      if(lead==null)continue;
+      LinearLayout card=card();
+      String symbol=lead.optString("symbol","UNKNOWN");
+      card.addView(text((i+1)+". "+symbol+
+        (lead.optBoolean("historyVerified")?" · H20 CHECKED":" · PRELIMINARY"),
+        16,INK,true));
+      spaceIn(card,5);
+      card.addView(text(money(lead.optDouble("price",Double.NaN))+
+        "  ·  from open "+percent(lead.optDouble("fromOpenPct",Double.NaN)),
+        15,BLUE,true));
+      if(lead.optBoolean("historyVerified")){
+        spaceIn(card,4);
+        card.addView(text("Prior 20-session high: "+
+          money(lead.optDouble("breakoutLevel",Double.NaN))+
+          " · distance "+percent(lead.optDouble("distancePct",Double.NaN)),
+          12,INK,false));
+      }
+      spaceIn(card,5);
+      card.addView(text("WATCH ONLY · Bulk quotes lack broker trade timestamp and live gates. "+
+        "No Alpha-30 BUY verified.",11,AMBER,true));
+    }
+    space(10);
+  }
+
   private void renderLive(){
     JSONObject scan=discovery.latest();
     JSONArray latestTop=scan.optJSONArray("top");
@@ -761,7 +878,7 @@ public final class HomeActivity extends Activity {
        12,MUTED,false));
     space(9);
     if(!serverConfigured()){
-      root.addView(text("PHONE-ONLY MODE: full NSE discovery runs overnight; intraday monitoring covers a limited saved priority list, NOT the full NSE universe. Deploy the independent server for persistent market-wide scanning.",12,AMBER,true));
+      root.addView(text("PHONE-ONLY: broad NSE price radar refreshes on a best-effort 15-minute schedule. Only a small candidate list receives detailed monitoring; an independent server is still needed for uninterrupted scans and verified BUY alerts.",12,AMBER,true));
     }
     space(13);
     LinearLayout overview=card();
@@ -789,7 +906,9 @@ public final class HomeActivity extends Activity {
       summaryCard(scan,false);
       overnightEvidencePanel(scan);
     }
-    if(live.length()==0&&provisional.length()==0){
+    radarPanel();
+    if(live.length()==0&&provisional.length()==0 &&
+       (!open()||intradayRadar.currentCandidates()==null||intradayRadar.currentCandidates().length()==0)){
       LinearLayout empty=card();
       empty.addView(text(busy?"Scanning NSE…":"No active verified research shortlist",16,INK,true));
       spaceIn(empty,7);
@@ -902,10 +1021,15 @@ public final class HomeActivity extends Activity {
   }
   private void render(){
     if(root==null)return;
+    final int previousScroll=mainScroll==null?0:mainScroll.getScrollY();
     root.removeAllViews();tabHeader();
     scanStatusCard();
     if("CLOSED".equals(section))renderClosed();
     else renderLive();
+    // Preserve reading position across 30-second quote/health UI refreshes.
+    if(mainScroll!=null&&previousScroll>0){
+      mainScroll.post(()->mainScroll.scrollTo(0,previousScroll));
+    }
   }
   private void exportLogs(){
     Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
@@ -941,7 +1065,7 @@ public final class HomeActivity extends Activity {
           if(symbol.matches("[A-Z0-9&-]{1,26}"))selected.add(symbol);
         }
         DiagnosticExporter.save(getApplicationContext(),uri,new WatchStore(this),selected,
-          getPreferences(MODE_PRIVATE).getString("server_url",""),
+          getSharedPreferences("mathformula_shared_runtime_v30",MODE_PRIVATE).getString("server_url",""),
           secrets.get("server_viewer_token"));
       }catch(Exception e){issue=e.getClass().getSimpleName();}
       String problem=issue;
