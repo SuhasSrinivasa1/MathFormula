@@ -60,7 +60,7 @@ final class GrowwReadOnlyClient {
       }
       int status=c.getResponseCode();
       if(status==401||status==403)throw new SecurityException("Groww authorization rejected (HTTP "+status+")");
-      if(status==429){GrowwQuota.backoff();throw new IllegalStateException("Groww rate limit reached (HTTP 429); cooldown enabled");}
+      if(status==429){GrowwQuota.backoff(quotaContext);throw new IllegalStateException("Groww rate limit reached (HTTP 429); 30 minute account cooldown enabled");}
       if(status<200||status>=300)throw new IllegalStateException("Groww HTTP "+status);
       StringBuilder sb=new StringBuilder();
       try(InputStream stream=c.getInputStream();BufferedReader reader=new BufferedReader(new InputStreamReader(stream,StandardCharsets.UTF_8))){
