@@ -490,7 +490,7 @@ public final class HomeActivity extends Activity {
     long since=System.currentTimeMillis()-verified;
     boolean authorized=secrets.configured()&&verified>0&&since>=0&&since<=15*60_000L;
     brand.addView(text(authorized?"✓ Groww authenticated":
-        secrets.configured()?"○ Groww credentials saved · refresh automatic":"○ Groww not connected",
+        secrets.configured()?"○ Groww credentials saved · session check pending":"○ Groww not connected",
         11,authorized?GREEN:AMBER,true));
     top.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
     TextView settings=text("⚙",24,BLUE,true);
