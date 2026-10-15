@@ -91,7 +91,7 @@ P1: Point-in-time walk-forward and multiweek paper-trade acceptance report.
 ## Explicit platform constraints
 
 - Groww's published access token expires daily at 06:00 IST. Retained TOTP material
-  can be used to renew tokens, subject to valid Groww service access.
+  can be used to attempt renewal subject to Groww account approval, token/API-key validity, subscription, clock synchronization and rate limits. Groww TOTP documentation describes a daily approval requirement in its key flow; unattended renewal must be proven against the actual account and provider policy.
 - Android JobScheduler/WorkManager best-effort jobs can be delayed in Doze, particularly
   on OEM firmware. 15-minute periodic execution is not guaranteed to be exact.
 - Android 15 target SDK 35 dataSync foreground service has a shared 6-hour/24-hour
