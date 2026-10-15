@@ -249,7 +249,12 @@ public final class MainActivity extends Activity {
           throw new IllegalStateException("Groww returned no usable NSE cash quote");
         tradeAt=check.lastTradeMs;
       }catch(SecurityException e){
-        problem="Groww authentication rejected · check TOTP token and secret";
+        String detail=e.getMessage()==null?"":e.getMessage();
+        problem=detail.contains("403")?
+          "Groww access denied (403) · verify daily account/API approval in Groww":
+          detail.contains("401")?
+          "Groww token rejected (401) · saved TOTP remains; use Reconnect":
+          "Groww authorization could not be verified · check saved TOTP and account approval";
       }catch(Exception e){
         String lower=e.getMessage()==null?"":e.getMessage().toLowerCase(Locale.US);
         problem=lower.contains("cooldown")?"Groww authentication cooldown · retry after one minute":
@@ -285,15 +290,17 @@ public final class MainActivity extends Activity {
     page.addView(text("MATHFORMULA v"+version+"  ·  ALPHA-30 RESEARCH",11,BLUE,true));
     gap(page,17);
     LinearLayout connection=card();
-    connection.addView(text("Groww connection",19,INK,true));
+    connection.addView(text("Connect Groww",19,INK,true));
+    gap(connection,4);
+    connection.addView(text("Read-only NSE market data. One-time TOTP setup is encrypted with Android Keystore. We never request your Groww password or place orders.",12,MUTED,false));
     gap(connection,9);
     String label;
     int stateColor;
     if(growwChecking){label="◌ Checking Groww authentication";stateColor=AMBER;}
     else if(verifiedRecently()){label="✓ Groww authenticated";stateColor=GREEN;}
     else if(!vault.configured()){label="○ Groww credentials not configured";stateColor=AMBER;}
-    else if(lastVerified()>0){label="○ Groww credentials saved · session refreshes automatically";stateColor=AMBER;}
-    else {label="○ Credentials saved · not yet authenticated";stateColor=AMBER;}
+    else if(lastVerified()>0){label="○ TOTP saved · connection verification outdated";stateColor=AMBER;}
+    else {label="○ Groww not connected · setup required";stateColor=AMBER;}
     connection.addView(text(label,15,stateColor,true));
     if(vault.configured()){
       gap(connection,5);
@@ -315,13 +322,13 @@ public final class MainActivity extends Activity {
         verifiedRecently()?GREEN:AMBER,false));
     }
     gap(connection,14);
-    connection.addView(text("Groww TOTP token",13,INK,true));
+    connection.addView(text("1 · Groww TOTP API token",13,INK,true));
     gap(connection,5);
     growwTokenInput=passwordField(vault.get("totp_token").isEmpty()?
       "Enter Groww TOTP token":"Saved securely · leave blank to keep");
     connection.addView(growwTokenInput,new LinearLayout.LayoutParams(-1,dp(53)));
     gap(connection,13);
-    connection.addView(text("Groww TOTP secret",13,INK,true));
+    connection.addView(text("2 · Groww Base32 TOTP secret",13,INK,true));
     gap(connection,5);
     growwSecretInput=passwordField(vault.get("totp_secret").isEmpty()?
       "Enter Base32 TOTP secret":"Saved securely · leave blank to keep");
@@ -331,14 +338,16 @@ public final class MainActivity extends Activity {
     gap(connection,14);
     LinearLayout actions=new LinearLayout(this);
     actions.setOrientation(LinearLayout.HORIZONTAL);
-    Button save=btn("Save",this::saveGroww);
-    Button connect=btn(growwChecking?"Checking…":"↻ Refresh & Connect",this::refreshGrowwConnection);
+    Button save=btn("Save only",this::saveGroww);
+    Button connect=btn(growwChecking?"Checking…":"Connect / Recheck",this::refreshGrowwConnection);
     save.setEnabled(!growwChecking);connect.setEnabled(!growwChecking);
     LinearLayout.LayoutParams one=new LinearLayout.LayoutParams(0,dp(48),1);
     one.rightMargin=dp(9);
     actions.addView(save,one);
     actions.addView(connect,new LinearLayout.LayoutParams(0,dp(48),2));
     connection.addView(actions);
+    gap(connection,9);
+    connection.addView(text("SAVED = stored securely; CONNECTED = verified Groww API access; APPROVAL REQUIRED = provider permission missing. Access tokens expire at 06:00 IST and may need renewed approval.",11,MUTED,false));
     gap(page,2);
     LinearLayout alerts=card();
     alerts.addView(text("Monitoring & notifications",18,INK,true));
