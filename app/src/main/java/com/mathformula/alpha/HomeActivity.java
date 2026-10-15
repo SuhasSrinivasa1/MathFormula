@@ -3,6 +3,7 @@ package com.mathformula.alpha;
 import androidx.appcompat.app.AppCompatActivity;
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.tabs.TabLayout;
 import android.content.res.ColorStateList;
 import android.Manifest;
 import android.content.pm.PackageManager;
@@ -517,26 +518,25 @@ public final class HomeActivity extends AppCompatActivity {
     settings.setOnClickListener(v->startActivity(new Intent(this,MainActivity.class)));
     top.addView(settings);root.addView(top);
     space(20);
-    LinearLayout tabs=new LinearLayout(this);tabs.setBackground(rounded(Color.WHITE));
-    tabs.setPadding(dp(4),dp(4),dp(4),dp(4));
-    for(String item:new String[]{"LIVE","CLOSED"}){
-      String caption=item.equals("LIVE")?"Market watch":"History";
-      TextView tab=text(caption,13,item.equals(section)?BLUE:MUTED,item.equals(section));
-      tab.setGravity(Gravity.CENTER);tab.setPadding(dp(6),dp(15),dp(6),dp(15));tab.setMinimumHeight(dp(48));
-      tab.setBackground(rounded(item.equals(section)?Color.rgb(229,240,250):Color.WHITE));
-      LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
-      tabs.addView(tab,lp);
-      tab.setClickable(true);tab.setFocusable(true);
-      tab.setContentDescription("Show "+caption);
-      tab.setBackground(new android.graphics.drawable.RippleDrawable(
-        android.content.res.ColorStateList.valueOf(Color.argb(42,24,91,154)),
-        rounded(item.equals(section)?Color.rgb(229,240,250):Color.WHITE),
-        rounded(Color.WHITE)));
-      tab.setOnClickListener(v->{section=item;render();
-        if(item.equals("LIVE")){ensureFresh();refreshPrices();}
-      });
-    }
-    root.addView(tabs);space(14);
+    TabLayout tabs=new TabLayout(this);
+    tabs.setTabMode(TabLayout.MODE_FIXED);
+    tabs.setTabGravity(TabLayout.GRAVITY_FILL);
+    tabs.setSelectedTabIndicatorColor(BLUE);
+    tabs.setSelectedTabIndicatorHeight(dp(3));
+    tabs.setTabTextColors(MUTED,BLUE);
+    tabs.setBackground(rounded(Color.WHITE));
+    tabs.addTab(tabs.newTab().setText("Market watch"));
+    tabs.addTab(tabs.newTab().setText("History"));
+    if("CLOSED".equals(section))tabs.getTabAt(1).select();
+    tabs.addOnTabSelectedListener(new TabLayout.OnTabSelectedListener(){
+      @Override public void onTabSelected(TabLayout.Tab tab){
+        section=tab.getPosition()==0?"LIVE":"CLOSED";render();
+        if("LIVE".equals(section)){ensureFresh();refreshPrices();}
+      }
+      @Override public void onTabUnselected(TabLayout.Tab tab){}
+      @Override public void onTabReselected(TabLayout.Tab tab){}
+    });
+    root.addView(tabs,new LinearLayout.LayoutParams(-1,dp(56)));space(14);
     systemHealth();
   }
   private void systemHealth(){
