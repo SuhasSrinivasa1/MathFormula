@@ -1,6 +1,9 @@
 package com.mathformula.alpha;
 
-import android.app.Activity;
+import androidx.appcompat.app.AppCompatActivity;
+import com.google.android.material.card.MaterialCardView;
+import com.google.android.material.button.MaterialButton;
+import android.content.res.ColorStateList;
 import android.net.Uri;
 import android.app.AlertDialog;
 import android.os.Bundle;
@@ -35,7 +38,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /** Direct Groww read-only market monitor; no buy/sell APIs or buttons. */
-public final class MainActivity extends Activity {
+public final class MainActivity extends AppCompatActivity {
   private static final int INK=Color.rgb(24,37,55),BLUE=Color.rgb(29,99,169);
   private static final int MUTED=Color.rgb(108,118,132),GREEN=Color.rgb(23,126,90);
   private static final int RED=Color.rgb(183,56,59),AMBER=Color.rgb(164,104,12);
@@ -84,16 +87,19 @@ public final class MainActivity extends Activity {
   }
   private void gap(LinearLayout p,int v){p.addView(new View(this),new LinearLayout.LayoutParams(1,dp(v)));}
   private LinearLayout card(){
+    MaterialCardView shell=new MaterialCardView(this);shell.setRadius(dp(20));
+    shell.setCardElevation(dp(2));shell.setCardBackgroundColor(Color.WHITE);
+    shell.setStrokeColor(Color.rgb(227,233,240));shell.setStrokeWidth(dp(1));
     LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);
-    c.setPadding(dp(16),dp(15),dp(16),dp(15));c.setBackground(background(Color.WHITE,15));
-    LinearLayout.LayoutParams l=new LinearLayout.LayoutParams(-1,-2);l.bottomMargin=dp(12);page.addView(c,l);return c;
+    c.setPadding(dp(18),dp(17),dp(18),dp(17));
+    shell.addView(c,new MaterialCardView.LayoutParams(-1,-2));
+    LinearLayout.LayoutParams l=new LinearLayout.LayoutParams(-1,-2);l.bottomMargin=dp(14);
+    page.addView(shell,l);return c;
   }
   private Button btn(String caption,Runnable action){
-    Button b=new Button(this);b.setAllCaps(false);b.setText(caption);
+    MaterialButton b=new MaterialButton(this);b.setAllCaps(false);b.setText(caption);
     b.setTextSize(14);b.setTextColor(Color.WHITE);b.setMinimumHeight(dp(48));
-    b.setBackground(new android.graphics.drawable.RippleDrawable(
-      android.content.res.ColorStateList.valueOf(Color.argb(56,255,255,255)),
-      background(BLUE,11),background(Color.WHITE,11)));
+    b.setCornerRadius(dp(14));b.setBackgroundTintList(ColorStateList.valueOf(BLUE));
     b.setOnClickListener(v->action.run());return b;
   }
   private void addButtonRow(String a,Runnable ar,String b,Runnable br){
