@@ -220,7 +220,9 @@ final class GrowwReadOnlyClient {
     }
     // TODAY's H20 is calculated from the 20 PREVIOUS COMPLETED sessions,
     // including yesterday's high, rather than the candidate's old breakout H20.
-    for(int i=n-20;i<n;i++)h.nextHigh20=Math.max(h.nextHigh20,candles.get(i)[2]);
+    double[] completedHighs=new double[20];
+    for(int i=0;i<20;i++)completedHighs[i]=candles.get(n-20+i)[2];
+    h.nextHigh20=Alpha30ReferenceMath.completedHigh20(completedHighs);
     return h;
   }
 
