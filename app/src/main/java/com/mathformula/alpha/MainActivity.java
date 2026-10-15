@@ -289,9 +289,13 @@ public final class MainActivity extends Activity {
     if(growwChecking){label="◌ Checking Groww authentication";stateColor=AMBER;}
     else if(verifiedRecently()){label="✓ Groww authenticated";stateColor=GREEN;}
     else if(!vault.configured()){label="○ Groww credentials not configured";stateColor=AMBER;}
-    else if(lastVerified()>0){label="◷ Previously authenticated · verify again";stateColor=AMBER;}
+    else if(lastVerified()>0){label="○ Groww credentials saved · session refreshes automatically";stateColor=AMBER;}
     else {label="○ Credentials saved · not yet authenticated";stateColor=AMBER;}
     connection.addView(text(label,15,stateColor,true));
+    if(vault.configured()){
+      gap(connection,5);
+      connection.addView(text("Groww TOTP credentials are securely saved. The daily access token expires at 06:00 IST; new sessions are requested automatically as needed. An old 15-minute verification is not a request to re-enter credentials.",12,MUTED,false));
+    }
     if(lastVerified()>0){
       gap(connection,4);
       connection.addView(text("Last successful API verification: "+clock(lastVerified()),
@@ -442,13 +446,15 @@ public final class MainActivity extends Activity {
     try{
       Intent intent=new Intent(this,ScannerService.class).setAction(ScannerService.START);
       if(Build.VERSION.SDK_INT>=26)startForegroundService(intent);else startService(intent);
-      status="Requested Android background monitoring; check scan timestamp for verification";
+      getSharedPreferences("mathformula_auto_monitor_v29",MODE_PRIVATE).edit().putBoolean("opted_out",false).apply();
+       status="Requested Android background monitoring; check scan timestamp for verification";
       render();
     }catch(RuntimeException e){status="Android blocked background start; retry while app is visible";render();}
   }
   private void stopMonitoring(){
     Intent intent=new Intent(this,ScannerService.class).setAction(ScannerService.STOP);
     startService(intent);watchStore.setEnabled(false);
+    getSharedPreferences("mathformula_auto_monitor_v29",MODE_PRIVATE).edit().putBoolean("opted_out",true).apply();
     status="Stop requested; monitoring session will close";render();
   }
   private void showAudit(){
