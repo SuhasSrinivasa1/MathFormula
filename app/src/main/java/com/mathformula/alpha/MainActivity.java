@@ -3,6 +3,8 @@ package com.mathformula.alpha;
 import androidx.appcompat.app.AppCompatActivity;
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.textfield.TextInputLayout;
+import com.google.android.material.textfield.TextInputEditText;
 import android.content.res.ColorStateList;
 import android.net.Uri;
 import android.app.AlertDialog;
@@ -192,7 +194,7 @@ public final class MainActivity extends AppCompatActivity {
     return vault.configured() && age>=0 && age<=AUTH_FRESH_MS;
   }
   private EditText passwordField(String placeholder){
-    EditText e=new EditText(this);
+    EditText e=new TextInputEditText(this);
     e.setSingleLine(true);
     e.setTextSize(14);
     e.setTextColor(INK);
@@ -201,9 +203,19 @@ public final class MainActivity extends AppCompatActivity {
     e.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
     e.setSaveEnabled(false);
     e.setPadding(dp(12),dp(14),dp(12),dp(14));
-    e.setBackground(background(Color.rgb(245,248,252),11));
+    e.setBackground(null);
     e.setHint(placeholder);
     return e;
+  }
+  /** Material 3 outlined credential entry, privacy and accessible hint. */
+  private TextInputLayout credentialBox(EditText entry,String field){
+    TextInputLayout shell=new TextInputLayout(this);
+    shell.setBoxBackgroundMode(TextInputLayout.BOX_BACKGROUND_OUTLINE);
+    shell.setBoxCornerRadii(dp(14),dp(14),dp(14),dp(14));
+    shell.setHint(field);
+    shell.setHelperText("Encrypted on this device · leave blank to keep existing value");
+    shell.addView(entry,new android.widget.FrameLayout.LayoutParams(-1,dp(55)));
+    return shell;
   }
   /** Only save encrypted values; never show credentials or imply authentication. */
   private boolean saveInlineCredentials(){
@@ -332,13 +344,15 @@ public final class MainActivity extends AppCompatActivity {
     gap(connection,5);
     growwTokenInput=passwordField(vault.get("totp_token").isEmpty()?
       "Enter Groww TOTP token":"Saved securely · leave blank to keep");
-    connection.addView(growwTokenInput,new LinearLayout.LayoutParams(-1,dp(53)));
+    connection.addView(credentialBox(growwTokenInput,"Groww API token"),
+       new LinearLayout.LayoutParams(-1,-2));
     gap(connection,13);
     connection.addView(text("2 · Groww Base32 TOTP secret",13,INK,true));
     gap(connection,5);
     growwSecretInput=passwordField(vault.get("totp_secret").isEmpty()?
       "Enter Base32 TOTP secret":"Saved securely · leave blank to keep");
-    connection.addView(growwSecretInput,new LinearLayout.LayoutParams(-1,dp(53)));
+    connection.addView(credentialBox(growwSecretInput,"TOTP Base32 secret"),
+       new LinearLayout.LayoutParams(-1,-2));
     gap(connection,6);
     connection.addView(text("Fields are masked. Saved values stay encrypted on this device; empty fields preserve saved values.",11,MUTED,false));
     gap(connection,14);
