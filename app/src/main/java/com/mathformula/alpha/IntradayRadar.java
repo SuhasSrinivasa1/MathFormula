@@ -159,6 +159,9 @@ final class IntradayRadar {
         .put("status","RESEARCH ONLY · NOT A LIVE ALPHA-30 BUY")
         .put("formulaVersion",Alpha30Engine.VERSION)
         .put("dataLimitation","Bulk LTP lacks exchange trade timestamp; full financial/macro factor coverage unavailable");
+      new WatchStore(app).audit("RADAR","NSE","RUNNING","COMPLETED",
+        "NSE screened "+universe.size()+" quotes "+quotes+" cached references "+
+        cachedReferences+" leads "+leads.size()+" failed batches "+batchesFailed,0);
       prefs.edit().putString("latest",result.toString())
         .putLong("completedMs",System.currentTimeMillis())
         .putString("state","COMPLETED").putString("issue","").commit();
