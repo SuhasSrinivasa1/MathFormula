@@ -153,8 +153,21 @@ final class LocalDiscovery {
     return out;
   }
   JSONArray priorityWatchlist(){
-    try{return new JSONArray(prefs.getString("overnightPriority50","[]"));}
-    catch(Exception ignored){return new JSONArray();}
+    JSONArray saved;
+    try{saved=new JSONArray(prefs.getString("overnightPriority50","[]"));}
+    catch(Exception ignored){saved=new JSONArray();}
+    if(saved.length()>0)return saved;
+    // Preserve immediately usable v2.7 provisional names on first v2.8
+    // install; these are just 1–3 research leads, not 50 verified stocks.
+    JSONArray fallback=preview().optJSONArray("top");
+    if(fallback==null||fallback.length()==0)fallback=latest().optJSONArray("top");
+    JSONArray out=new JSONArray();
+    if(fallback!=null)for(int i=0;i<fallback.length()&&out.length()<50;i++){
+      JSONObject candidate=fallback.optJSONObject(i);
+      String symbol=candidate==null?"":candidate.optString("symbol","");
+      if(symbol.matches("[A-Z0-9&-]{1,26}"))out.put(symbol);
+    }
+    return out;
   }
   JSONObject priorityLatest(){
     try{return new JSONObject(prefs.getString("priorityLatest","{}"));}
