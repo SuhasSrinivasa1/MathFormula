@@ -49,6 +49,14 @@ public final class ResearchJob extends JobService {
           // the shared quota limiter governs both foreground and background.
           boolean intraday=MarketSchedule.weekdayTradingTime(System.currentTimeMillis());
           if(intraday){
+            // Best effort Android broad radar. Never interprets LTP as confirmed Alpha-30 BUY.
+            IntradayRadar radar=new IntradayRadar(this);
+            if(!cancelled && radar.due()){
+              try{radar.scan(client,discovery,status->{});}
+              catch(Exception ex){
+                ResearchAlerts.record(this,0,"Intraday breadth unavailable: "+ex.getClass().getSimpleName());
+              }
+            }
             // At most ONE batched LTP request for the 50 preselected names.
             try{discovery.refreshPriority(client);}
             catch(Exception ex){ResearchAlerts.record(this,0,
