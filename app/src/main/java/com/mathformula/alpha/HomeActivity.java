@@ -54,7 +54,8 @@ public final class HomeActivity extends Activity {
   private GrowwReadOnlyClient groww;
   private LinearLayout root;
   private String section="LIVE",scanProgress="";
-  private boolean busy=false,quoteBusy=false;
+  private boolean busy=false,quoteBusy=false,priorityBusy=false;
+  private long lastPriorityAttempt=0;
   private long lastQuoteAttempt=0,lastAlertAttempt=0;
   private boolean startedWhileOpen=false;
   private String lastVisibleDate="";
@@ -185,6 +186,18 @@ public final class HomeActivity extends Activity {
     });
   }
   private void ensureFresh(){ /* Full universe research is strictly overnight. */ }
+  private void refreshPriorityWatchlist(){
+    long now=System.currentTimeMillis();
+    if(!open()||priorityBusy||!secrets.configured()||discovery.scanning()||
+       now-lastPriorityAttempt<60000L)return;
+    if(discovery.priorityWatchlist().length()==0)return;
+    priorityBusy=true;lastPriorityAttempt=now;
+    worker.execute(()->{
+      try{discovery.refreshPriority(groww);}
+      catch(Exception ex){handler.post(()->scanProgress="Priority quote refresh: "+safeReason(ex));}
+      finally{handler.post(()->{priorityBusy=false;render();});}
+    });
+  }
   private boolean safeOvernightWindow(){
     java.time.LocalTime t=java.time.Instant.now().atZone(MarketSchedule.IST).toLocalTime();
     return !t.isBefore(java.time.LocalTime.of(16,30))||
@@ -327,11 +340,9 @@ public final class HomeActivity extends Activity {
   private long nextScanTime(){
     long now=System.currentTimeMillis();
     long previous=discovery.lastScan();
-    if(open()){
-      long interval=MarketSchedule.preClose(now)?5*60000L:15*60000L;
-      return previous==0?now:Math.max(now,previous+interval);
-    }
-    return previous==0?now:Math.max(now,previous+4*60*60000L);
+    if(!safeOvernightWindow())return 0; // No full-universe scan during trading/pre-open.
+    if(discovery.completedForCurrentEod())return 0;
+    return previous==0?now:Math.max(now,discovery.lastAttempt()+45*60000L);
   }
   private String rejectionSummary(JSONObject reasons){
     java.util.Iterator<String> keys=reasons.keys();
@@ -372,6 +383,15 @@ public final class HomeActivity extends Activity {
         "Awaiting scanner response":remoteError,12,remoteConnected?GREEN:AMBER,false));
     }else{
       c.addView(text("Last full successful scan: "+time(discovery.lastScan()),12,INK,false));
+      JSONObject tracked=discovery.priorityLatest();
+      if(tracked.optInt("requested",0)>0){
+        c.addView(text("Daytime shortlist: "+tracked.optInt("received")+" / "+
+          tracked.optInt("requested")+" batch LTP prices · "+
+          time(tracked.optLong("observedMs")),11,MUTED,false));
+      }else if(discovery.priorityWatchlist().length()>0){
+        c.addView(text("Overnight priority symbols ready: "+
+          discovery.priorityWatchlist().length()+" (not yet refreshed during trading)",11,BLUE,false));
+      }
       c.addView(text("Last scan attempt: "+time(discovery.lastAttempt()),12,MUTED,false));
       c.addView(text("Result: "+discovery.lastAttemptState(),12,
         discovery.error().isEmpty()?MUTED:AMBER,false));
@@ -426,8 +446,8 @@ public final class HomeActivity extends Activity {
       c.addView(text("Whole NSE universe: once per completed EOD, only 16:30–07:30 IST; resumable overnight.",11,MUTED,false));
       c.addView(text("Market hours: batched LTP monitoring of up to 50 shortlisted symbols, plus detailed Top 3 checks.",11,MUTED,false));
       c.addView(text("Groww historical budget: max 3/min. Existing 429 cooldown: 30 min; other apps share account limits.",11,AMBER,false));
-      c.addView(text("Next eligible scan: "+time(nextScanTime())+
-        (marketOpen?" · live":" · after-hours research, 4-hour auto interval"),11,BLUE,true));
+      c.addView(text(nextScanTime()==0?"Next full-universe scan: after 16:30 IST or already complete":
+        "Next overnight research eligibility: "+time(nextScanTime()),11,BLUE,true));
     }
     spaceIn(c,11);
     android.widget.Button button=new android.widget.Button(this);
