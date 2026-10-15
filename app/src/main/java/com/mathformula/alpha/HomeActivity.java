@@ -781,6 +781,20 @@ public final class HomeActivity extends Activity {
       JSONObject item=live.optJSONObject(i);
       if(item!=null)stockCard(item,i+1,false);
     }
+    if(!serverConfigured()&&!discovery.completedForCurrentEod()){
+      JSONArray partial=discovery.partialVerifiedResearch();
+      if(partial.length()>0){
+        space(6);
+        root.addView(text("Historically checked · incomplete overnight scan",17,INK,true));
+        space(4);
+        root.addView(text("These passed technical EOD checks so far. The full universe, financial factors and trade eligibility are NOT verified.",11,AMBER,false));
+        space(6);
+        for(int k=0;k<partial.length();k++){
+          JSONObject candidate=partial.optJSONObject(k);
+          if(candidate!=null)stockCard(candidate,k+1,false);
+        }
+      }
+    }
     if(provisional.length()>0){
       space(6);
       root.addView(text("Preliminary Top 3 · awaiting historical verification",17,INK,true));
