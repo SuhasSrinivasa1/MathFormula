@@ -88,14 +88,14 @@ public final class HomeActivity extends Activity {
     return t;
   }
   private GradientDrawable rounded(int fill){
-    GradientDrawable b=new GradientDrawable();b.setColor(fill);b.setCornerRadius(dp(14));return b;
+    GradientDrawable b=new GradientDrawable();b.setColor(fill);b.setCornerRadius(dp(18));return b;
   }
   private void space(int dp){root.addView(new View(this),new LinearLayout.LayoutParams(1,dp(dp)));}
   private LinearLayout card(){
     LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);
     c.setPadding(dp(16),dp(16),dp(16),dp(16));c.setBackground(rounded(Color.WHITE));
     LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(13);
-    root.addView(c,p);return c;
+    root.addView(c,p);c.setElevation(dp(1));return c;
   }
   private String time(long ms){
     if(ms<=0)return "Not available";
@@ -506,6 +506,7 @@ public final class HomeActivity extends Activity {
     settings.setGravity(Gravity.CENTER);
     settings.setPadding(dp(14),dp(10),dp(14),dp(10));
     settings.setBackground(rounded(Color.WHITE));
+    settings.setClickable(true);settings.setFocusable(true);
     settings.setOnClickListener(v->startActivity(new Intent(this,MainActivity.class)));
     top.addView(settings);root.addView(top);
     space(20);
@@ -518,11 +519,42 @@ public final class HomeActivity extends Activity {
       tab.setBackground(rounded(item.equals(section)?Color.rgb(229,240,250):Color.WHITE));
       LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
       tabs.addView(tab,lp);
+      tab.setClickable(true);tab.setFocusable(true);
+      tab.setContentDescription("Show "+caption);
+      tab.setBackground(new android.graphics.drawable.RippleDrawable(
+        android.content.res.ColorStateList.valueOf(Color.argb(42,24,91,154)),
+        rounded(item.equals(section)?Color.rgb(229,240,250):Color.WHITE),
+        rounded(Color.WHITE)));
       tab.setOnClickListener(v->{section=item;render();
         if(item.equals("LIVE")){ensureFresh();refreshPrices();}
       });
     }
-    root.addView(tabs);space(16);
+    root.addView(tabs);space(14);
+    systemHealth();
+  }
+  private void systemHealth(){
+    LinearLayout grid=new LinearLayout(this);
+    grid.setOrientation(LinearLayout.HORIZONTAL);
+    String market=open()?"OPEN":"CLOSED";
+    String growwState=!secrets.configured()?"SETUP":new WatchStore(this).lastPollOk()?
+      "DATA SEEN":"SAVED";
+    String scanner=serverConfigured()?
+      remoteConnected?"SERVER LIVE":"SERVER DOWN":
+      intradayRadar.fresh()?"RADAR FRESH":intradayRadar.running()?"SCANNING":"PHONE ONLY";
+    String alerts=ResearchAlerts.permission(this)?"ALLOWED":"OFF";
+    String[] labels={"MARKET","GROWW","SCANNER","ALERTS"};
+    String[] values={market,growwState,scanner,alerts};
+    for(int i=0;i<labels.length;i++){
+      LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);
+      c.setPadding(dp(8),dp(11),dp(8),dp(11));
+      c.setBackground(rounded(Color.WHITE));
+      c.addView(text(labels[i],9,MUTED,true));
+      c.addView(text(values[i],11,INK,true));
+      LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
+      lp.setMargins(dp(2),0,dp(2),0);grid.addView(c,lp);
+    }
+    root.addView(grid);
+    space(14);
   }
   private void summaryCard(JSONObject scan,boolean closed){
     LinearLayout c=card();
@@ -644,6 +676,10 @@ public final class HomeActivity extends Activity {
       "NO CURRENT VERIFIED BUY · SEE MISSING REQUIREMENTS",
       11,buyNow?GREEN:AMBER,true));
     c.setContentDescription(symbol+" research details");
+    c.setClickable(true);c.setFocusable(true);
+    c.setBackground(new android.graphics.drawable.RippleDrawable(
+      android.content.res.ColorStateList.valueOf(Color.argb(35,24,91,154)),
+      rounded(Color.WHITE),rounded(Color.WHITE)));
     c.setOnClickListener(v->{
       String message="Status: "+stage+"\n\nObserved price: "+money(price)+
         "\nPrior resistance: "+money(j.optDouble("breakoutLevel",Double.NaN))+
