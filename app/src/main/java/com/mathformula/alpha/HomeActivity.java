@@ -64,8 +64,9 @@ public final class HomeActivity extends Activity {
       // Keep the user's selected section. Closing bell does not close a valid research watch.
       startedWhileOpen=open;
       if(serverConfigured())fetchRemote();
-      else if(open){ // Maintain research scan even when user is viewing Closed.
-        ensureFresh();
+      else if(open){
+        // Never reopen all-NSE historical verification during the market session.
+        refreshPriorityWatchlist();
         refreshPrices();
         evaluateAlerts();
       }else{
@@ -183,25 +184,36 @@ public final class HomeActivity extends Activity {
       });
     });
   }
-  private void ensureFresh(){runFullScan(false);}
+  private void ensureFresh(){ /* Full universe research is strictly overnight. */ }
+  private boolean safeOvernightWindow(){
+    java.time.LocalTime t=java.time.Instant.now().atZone(MarketSchedule.IST).toLocalTime();
+    return !t.isBefore(java.time.LocalTime.of(16,30))||
+      t.isBefore(java.time.LocalTime.of(7,30));
+  }
   private void ensureNextSessionFresh(){
     if(serverConfigured()||open()||!secrets.configured()||busy||quoteBusy||discovery.scanning())return;
     long now=System.currentTimeMillis();
     java.time.LocalTime t=Instant.ofEpochMilli(now).atZone(MarketSchedule.IST).toLocalTime();
-    // Prefer the finalized daily record, not the unfinished market-close bar.
-    if(!t.isBefore(java.time.LocalTime.of(15,30)) &&
-       t.isBefore(java.time.LocalTime.of(16,30)))return;
-    if(discovery.lastScan()>0 && now-discovery.lastScan()<4*60*60000L)return;
-    if(discovery.lastAttempt()>0 && now-discovery.lastAttempt()<20*60000L)return;
+    // EOD finalized only after 16:30. Never start resource-heavy research
+    // in pre-market, intraday, or just after the close.
+    if(!safeOvernightWindow())return;
+    if(discovery.completedForCurrentEod())return;
+    if(discovery.lastAttempt()>0 && now-discovery.lastAttempt()<45*60000L)return;
     runNextSessionScan(false);
   }
   private void runNextSessionScan(boolean force){
     if(serverConfigured()||busy||quoteBusy||discovery.scanning()||!secrets.configured())return;
-    if(open()){runFullScan(force);return;}
+    if(!safeOvernightWindow()){
+      Toast.makeText(this,"Full NSE scan runs only 16:30–07:30 IST. Monitoring the saved shortlist during market hours.",Toast.LENGTH_LONG).show();
+      return;
+    }
     long now=System.currentTimeMillis();
-    if(!force && discovery.lastScan()>0 && now-discovery.lastScan()<4*60*60000L)return;
+    if(discovery.completedForCurrentEod()){
+      Toast.makeText(this,"Latest NSE EOD full-universe scan already complete. Reusing cached shortlist.",Toast.LENGTH_LONG).show();
+      return;
+    }
     // Avoid accidental NSE-wide API request bursts from repeated manual taps.
-    if(discovery.lastAttempt()>0 && now-discovery.lastAttempt()<20*60000L){
+    if(discovery.lastAttempt()>0 && now-discovery.lastAttempt()<45*60000L){
       if(force)Toast.makeText(this,"Previous full scan attempted recently. See scanner status.",Toast.LENGTH_LONG).show();
       return;
     }
@@ -227,6 +239,14 @@ public final class HomeActivity extends Activity {
     if(!secrets.configured()){
       Toast.makeText(this,"Save and verify Groww credentials in Settings first",Toast.LENGTH_LONG).show();return;
     }
+    if(!safeOvernightWindow()){
+      if(open()){refreshPriorityWatchlist();refreshPrices();}
+      Toast.makeText(this,open()?
+        "Refreshing only the overnight shortlist (up to 50 NSE stocks)":
+        "Full-universe scans are scheduled 16:30–07:30 IST, after NSE closing data is available.",
+        Toast.LENGTH_LONG).show();
+      return;
+    }
     if(!open()){
       runNextSessionScan(true);
       return;
@@ -238,10 +258,10 @@ public final class HomeActivity extends Activity {
       Toast.makeText(this,"A full scan was attempted recently. Allow one minute before retrying.",Toast.LENGTH_LONG).show();
       return;
     }
-    runFullScan(true);
+    refreshPriorityWatchlist();refreshPrices();
   }
   private void runFullScan(boolean force){
-    if(busy||quoteBusy||!open()||!secrets.configured()||discovery.scanning())return;
+    if(busy||quoteBusy||!safeOvernightWindow()||!secrets.configured()||discovery.scanning())return;
     long now=System.currentTimeMillis();
     long interval=MarketSchedule.preClose(now)?5*60000L:15*60000L;
     if(!force && discovery.lastScan()>0 && now-discovery.lastScan()<interval)return;
@@ -403,22 +423,23 @@ public final class HomeActivity extends Activity {
         }
       }
       spaceIn(c,7);
-      c.addView(text("Broad NSE scan: every 15 min (09:15–14:29), every 5 min (14:30–15:29).",11,MUTED,false));
-      c.addView(text("Top-3 quote check: every 30 sec while app is open. Background checks: ~15 min, Android-controlled.",11,MUTED,false));
+      c.addView(text("Whole NSE universe: once per completed EOD, only 16:30–07:30 IST; resumable overnight.",11,MUTED,false));
+      c.addView(text("Market hours: batched LTP monitoring of up to 50 shortlisted symbols, plus detailed Top 3 checks.",11,MUTED,false));
+      c.addView(text("Groww historical budget: max 3/min. Existing 429 cooldown: 30 min; other apps share account limits.",11,AMBER,false));
       c.addView(text("Next eligible scan: "+time(nextScanTime())+
         (marketOpen?" · live":" · after-hours research, 4-hour auto interval"),11,BLUE,true));
     }
     spaceIn(c,11);
     android.widget.Button button=new android.widget.Button(this);
     button.setAllCaps(false);button.setText(serverConfigured()?"Refresh scanner feed":
-      marketOpen?"Scan Now":"Scan Tomorrow's Top 3");
+      safeOvernightWindow()?"Resume overnight full NSE scan":"Refresh selected 50 only");
     button.setTextSize(13);button.setTextColor(Color.WHITE);
     button.setBackground(rounded(BLUE));button.setEnabled(!busy&&!discovery.scanning()&&!remoteBusy);
     button.setOnClickListener(v->manualScan());
     c.addView(button,new LinearLayout.LayoutParams(-1,dp(43)));
     if(!marketOpen && !serverConfigured()){
       spaceIn(c,6);
-      c.addView(text("Outside NSE hours: Scan Now evaluates completed-session data. Live BUY confirmation remains suspended.",11,AMBER,false));
+      c.addView(text("Full NSE discovery is limited to 16:30–07:30 IST. During market hours we monitor the saved shortlist.",11,AMBER,false));
     }
   }
   private void tabHeader(){
