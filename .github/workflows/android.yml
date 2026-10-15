@@ -1,10 +1,10 @@
-name: MathFormula v3.0 Android QA
+name: MathFormula v3.1 Android QA
 on:
   push:
     branches: [main, 'feat/**', 'fix/**']
   workflow_dispatch:
 concurrency:
-  group: mathformula-v30-${{ github.sha }}
+  group: mathformula-v31-${{ github.sha }}
   cancel-in-progress: false
 jobs:
   android:
@@ -51,29 +51,29 @@ jobs:
       - name: Upload debug APK for Android QA (not a production upgrade)
         uses: actions/upload-artifact@v4
         with:
-          name: MathFormula-v3.0.0-DEBUG-QA
+          name: MathFormula-v3.1.0-DEBUG-QA
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Stage APK
         run: |
           if [[ "$STABLE_SIGNING_CONFIGURED" == "true" ]]; then
-            cp app/build/outputs/apk/release/app-release.apk MathFormula-v3.0.0-Stable.apk
+            cp app/build/outputs/apk/release/app-release.apk MathFormula-v3.1.0-Stable.apk
           else
-            cp app/build/outputs/apk/release/app-release-unsigned.apk MathFormula-v3.0.0-UNSIGNED.apk
+            cp app/build/outputs/apk/release/app-release-unsigned.apk MathFormula-v3.1.0-UNSIGNED.apk
           fi
       - name: Upload stable signed release APK
         if: env.STABLE_SIGNING_CONFIGURED == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: MathFormula-v3.0.0-Stable
-          path: MathFormula-v3.0.0-Stable.apk
+          name: MathFormula-v3.1.0-Stable
+          path: MathFormula-v3.1.0-Stable.apk
           if-no-files-found: error
       - name: Upload unsigned release for secure offline signing
         if: env.STABLE_SIGNING_CONFIGURED != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: MathFormula-v3.0.0-UNSIGNED
-          path: MathFormula-v3.0.0-UNSIGNED.apk
+          name: MathFormula-v3.1.0-UNSIGNED
+          path: MathFormula-v3.1.0-UNSIGNED.apk
           if-no-files-found: error
       - name: Stage Android SDK signing utility for local signing
         if: env.STABLE_SIGNING_CONFIGURED != 'true'
@@ -82,7 +82,7 @@ jobs:
         if: env.STABLE_SIGNING_CONFIGURED != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: MathFormula-v3.0.0-apksigner
+          name: MathFormula-v3.1.0-apksigner
           path: apksigner.jar
           if-no-files-found: error
       - name: Publish signed release only
@@ -90,11 +90,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v3.0.0 >/dev/null 2>&1; then
-            gh release edit v3.0.0 --target "$GITHUB_SHA" --title "MathFormula v2.6 next-session research"
+          if gh release view v3.1.0 >/dev/null 2>&1; then
+            gh release edit v3.1.0 --target "$GITHUB_SHA" --title "MathFormula v2.6 next-session research"
           else
-            gh release create v3.0.0 --target "$GITHUB_SHA" \
+            gh release create v3.1.0 --target "$GITHUB_SHA" \
               --title "MathFormula v2.4 stable-signing baseline" \
               --notes "Persistent Android package and signing identity. Signer certificate must match subsequent updates."
           fi
-          gh release upload v3.0.0 MathFormula-v3.0.0-Stable.apk --clobber
+          gh release upload v3.1.0 MathFormula-v3.1.0-Stable.apk --clobber
