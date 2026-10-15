@@ -297,7 +297,7 @@ public final class MainActivity extends Activity {
     connection.addView(text(label,15,stateColor,true));
     if(vault.configured()){
       gap(connection,5);
-      connection.addView(text("Groww TOTP credentials are securely saved. The daily access token expires at 06:00 IST; new sessions are requested automatically as needed. An old 15-minute verification is not a request to re-enter credentials.",12,MUTED,false));
+      connection.addView(text("Groww TOTP credentials are securely saved. The daily access token expires at 06:00 IST; the app attempts renewal as needed; Groww may require an account-side approval. Old verification does not mean credentials were erased.",12,MUTED,false));
     }
     if(lastVerified()>0){
       gap(connection,4);
