@@ -460,48 +460,79 @@ final class LocalDiscovery {
       .putString("lastAttemptState","Scanning NSE equity universe…").apply();
     try{
       List<String> universe=universe(progress);
+      String researchSession=cacheCutoffDate();
       Map<String,Double> prices=new HashMap<>();
-      Map<String,Object> candles=new HashMap<>();
-      int successfulBatches=0,failedBatches=0;
-      for(int offset=0;offset<universe.size();offset+=50){
-        if(Thread.currentThread().isInterrupted())throw new InterruptedException("Scan cancelled");
-        List<String> group=universe.subList(offset,Math.min(universe.size(),offset+50));
-        try{
-          JSONObject ltp=groww.batch("ltp",group);
-          JSONObject ohlc=groww.batch("ohlc",group);
-          for(String symbol:group){
-            double price=ltp.optDouble("NSE_"+symbol,Double.NaN);
-            Object data=ohlc.opt("NSE_"+symbol);
-            if(Double.isFinite(price)&&price>0)prices.put(symbol,price);
-            if(data!=null)candles.put(symbol,data);
-          }
-          successfulBatches++;
-        }catch(SecurityException auth){throw auth;}
-         catch(Exception partial){failedBatches++;}
-        if(offset%500==0)progress.update("Screening "+Math.min(offset+50,universe.size())+
-          " / "+universe.size()+" NSE stocks");
-        Thread.sleep(280); // less than 4 API calls/sec; avoids Groww Live Data limits
-      }
-      if(prices.size()<Math.max(200,(int)(universe.size()*.70)))
-        throw new IOException("Incomplete Groww price scan: "+prices.size()+" / "+universe.size());
       List<Broad> broad=new ArrayList<>();
-      for(String s:universe){
-        Double price=prices.get(s);Object data=candles.get(s);
-        if(price==null||data==null)continue;
-        double open=ohlcField(data,"open"),high=ohlcField(data,"high"),
-          low=ohlcField(data,"low");
-        if(!Double.isFinite(open)||open<=0||!Double.isFinite(high)||!Double.isFinite(low)||high<low)continue;
-        double move=100*(price/open-1);
-        if(price<25||price>15000||move<0.7||move>8.0)continue; // early setups, exclude chasing
-        double location=clamp((price-low)/Math.max(.01,high-low),0,1);
-        if(location<.55)continue;
-        Broad b=new Broad();
-        b.symbol=s;b.price=price;b.open=open;b.high=high;b.low=low;
-        b.move=move;b.location=location;
-        b.rank=55*clamp(move/7.,0,1)+45*location;
-        broad.add(b);
+      int successfulBatches=0,failedBatches=0;
+      boolean broadCacheUsed=false;
+      if(afterHours&&researchSession.equals(prefs.getString("overnightBroadSession",""))){
+        try{
+          JSONArray saved=new JSONArray(prefs.getString("overnightBroadSnapshot","[]"));
+          for(int i=0;i<saved.length();i++)broad.add(parseBroad(saved.getJSONObject(i)));
+          broadCacheUsed=!broad.isEmpty()&&prefs.getInt("overnightQuotedCount",0)>0;
+          if(broadCacheUsed){
+            successfulBatches=prefs.getInt("overnightSuccessfulBatches",0);
+            failedBatches=prefs.getInt("overnightFailedBatches",0);
+            progress.update("Resume prior "+broad.size()+" broad candidates without full NSE refetch");
+          }else broad.clear();
+        }catch(Exception ignored){broad.clear();}
       }
-      broad.sort((a,b)->Double.compare(b.rank,a.rank));
+      if(!broadCacheUsed){
+        Map<String,Object> candles=new HashMap<>();
+        for(int offset=0;offset<universe.size();offset+=50){
+          if(Thread.currentThread().isInterrupted())throw new InterruptedException("Scan cancelled");
+          List<String> group=universe.subList(offset,Math.min(universe.size(),offset+50));
+          try{
+            JSONObject ltp=groww.batch("ltp",group),ohlc=groww.batch("ohlc",group);
+            for(String symbol:group){
+              double price=ltp.optDouble("NSE_"+symbol,Double.NaN);
+              Object data=ohlc.opt("NSE_"+symbol);
+              if(Double.isFinite(price)&&price>0)prices.put(symbol,price);
+              if(data!=null)candles.put(symbol,data);
+            }
+            successfulBatches++;
+          }catch(SecurityException auth){throw auth;}
+           catch(Exception partial){
+             if("API_RATE_LIMIT".equals(classify(partial)))throw partial;
+             failedBatches++;
+           }
+          if(offset%500==0)progress.update("Scanning "+Math.min(offset+50,universe.size())+
+            " / "+universe.size()+" NSE equity symbols");
+          Thread.sleep(280);
+        }
+        if(prices.size()<Math.max(200,(int)(universe.size()*.90)))
+          throw new IOException("Incomplete Groww NSE price snapshot: "+prices.size()+" / "+universe.size());
+        for(String symbol:universe){
+          Double price=prices.get(symbol);Object data=candles.get(symbol);
+          if(price==null||data==null)continue;
+          double op=ohlcField(data,"open"),hi=ohlcField(data,"high"),
+            lo=ohlcField(data,"low");
+          if(!(op>0&&Double.isFinite(hi)&&Double.isFinite(lo)&&hi>=lo))continue;
+          double move=100*(price/op-1);
+          if(price<25||price>15000||move<0.7||move>8.0)continue;
+          double location=clamp((price-lo)/Math.max(.01,hi-lo),0,1);
+          if(location<.55)continue;
+          Broad item=new Broad();item.symbol=symbol;item.price=price;item.open=op;
+          item.high=hi;item.low=lo;item.move=move;item.location=location;
+          item.rank=55*clamp(move/7.,0,1)+45*location;
+          broad.add(item);
+        }
+        broad.sort((x,y)->Double.compare(y.rank,x.rank));
+        if(afterHours){
+          JSONArray saved=new JSONArray();
+          for(Broad item:broad)saved.put(jsonBroad(item));
+          prefs.edit().putString("overnightBroadSession",researchSession)
+            .putString("overnightBroadSnapshot",saved.toString())
+            .putInt("overnightQuotedCount",prices.size())
+            .putInt("overnightSuccessfulBatches",successfulBatches)
+            .putInt("overnightFailedBatches",failedBatches).commit();
+        }
+      }
+      if(afterHours){
+        JSONArray top50=new JSONArray();
+        for(int i=0;i<Math.min(50,broad.size());i++)top50.put(broad.get(i).symbol);
+        prefs.edit().putString("overnightPriority50",top50.toString()).apply();
+      }
       // Every eligible NSE stock goes through the broad-data scan BEFORE ranking.
       // Every broad-qualified candidate gets detailed historical verification;
       // there is NO arbitrary 55/50-stock selection cap.
@@ -639,7 +670,7 @@ final class LocalDiscovery {
          .put("modelVersion",Alpha30Engine.VERSION)
          .put("formulaUnchanged",true)
          .put("scannedAtMs",now).put("scanStartedMs",scanStarted).put("universeCount",universe.size())
-         .put("quotedCount",prices.size()).put("batchesSucceeded",successfulBatches)
+         .put("quotedCount",broadCacheUsed?prefs.getInt("overnightQuotedCount",0):prices.size()).put("batchesSucceeded",successfulBatches)
          .put("batchesFailed",failedBatches).put("broadCandidates",broad.size())
          .put("dailyHistoryVerified",checked).put("eligibleForResearch",valid)
          .put("universeCoverage",universeDiagnostics)
