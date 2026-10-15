@@ -178,7 +178,7 @@ final class GrowwReadOnlyClient {
       "&end_time="+encoded(cutoff+" 16:15:00")+"&candle_interval=1day";
     JSONObject data=call("GET",path,token(),null).optJSONObject("payload");
     JSONArray rows=data==null?null:data.optJSONArray("candles");
-    if(rows==null)throw new IllegalStateException("NSE completed daily candles unavailable");
+    if(rows==null)throw new IllegalStateException("HISTORICAL_RESPONSE_MISSING");
     List<double[]> candles=new ArrayList<>();
     for(int i=0;i<rows.length();i++){
       JSONArray a=rows.optJSONArray(i);
@@ -194,12 +194,14 @@ final class GrowwReadOnlyClient {
       candles.add(new double[]{at,op,hi,lo,cl,vol});
     }
     candles.sort((a,b)->Double.compare(a[0],b[0]));
-    if(candles.size()<61)throw new IllegalStateException("Insufficient NSE daily history");
+    if(candles.size()<61)throw new IllegalStateException(
+      candles.isEmpty()?"HISTORY_TIMESTAMP_OR_CANDLE_PARSE_EMPTY":
+      "INSUFFICIENT_COMPLETED_SESSIONS: "+candles.size()+" of required 61");
     int n=candles.size();
     double[] d=candles.get(n-1),previous=candles.get(n-2);
     java.time.LocalDate observed=Instant.ofEpochMilli((long)d[0]).atZone(IST).toLocalDate();
     if(java.time.temporal.ChronoUnit.DAYS.between(observed,cutoff)>7)
-      throw new IllegalStateException("Latest completed NSE session too old");
+      throw new IllegalStateException("EOD_LAST_SESSION_TOO_OLD");
     NextSessionHistory h=new NextSessionHistory();h.completedSessions=n;
     h.candleMs=(long)d[0];h.sessionDate=observed.toString();
     h.open=d[1];h.high=d[2];h.low=d[3];h.close=d[4];h.volume=d[5];
@@ -316,11 +318,26 @@ final class GrowwReadOnlyClient {
     m.breakoutLevel=maximum;m.referenceAsOf=asOf;m.referenceSource="Groww prior 20 daily candles";
   }
   private long readTime(Object t){
-    if(t instanceof Number){long v=((Number)t).longValue();return v<100000000000L?v*1000:v;}
-    try {
-      String s=String.valueOf(t).replace('T',' ');
-      LocalDateTime l=LocalDateTime.parse(s,java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-      return l.atZone(IST).toInstant().toEpochMilli();
-    } catch(Exception ignored){return 0;}
+    if(t instanceof Number){
+      long v=((Number)t).longValue();
+      return v<100000000000L?v*1000:v;
+    }
+    String raw=String.valueOf(t).trim();
+    if(raw.matches("[0-9]{10,13}")){
+      try{long n=Long.parseLong(raw);return raw.length()<=10?n*1000L:n;}
+      catch(Exception ignored){}
+    }
+    try{return java.time.Instant.parse(raw).toEpochMilli();}
+    catch(Exception ignored){}
+    try{return java.time.OffsetDateTime.parse(raw).toInstant().toEpochMilli();}
+    catch(Exception ignored){}
+    try{return LocalDateTime.parse(raw.replace('T',' '),
+      java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+      .atZone(IST).toInstant().toEpochMilli();}
+    catch(Exception ignored){}
+    try{return LocalDateTime.parse(raw).atZone(IST).toInstant().toEpochMilli();}
+    catch(Exception ignored){}
+    try{return LocalDate.parse(raw).atTime(9,15).atZone(IST).toInstant().toEpochMilli();}
+    catch(Exception ignored){return 0;}
   }
 }
