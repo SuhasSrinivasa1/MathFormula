@@ -470,9 +470,12 @@ public final class HomeActivity extends Activity {
     button.setAllCaps(false);button.setText(serverConfigured()?"Refresh scanner feed":
       safeOvernightWindow()?"Resume overnight full NSE scan":"Refresh selected 50 only");
     button.setTextSize(13);button.setTextColor(Color.WHITE);
-    button.setBackground(rounded(BLUE));button.setEnabled(!busy&&!discovery.scanning()&&!remoteBusy);
+    button.setBackground(new android.graphics.drawable.RippleDrawable(
+      android.content.res.ColorStateList.valueOf(Color.argb(60,255,255,255)),
+      rounded(BLUE),rounded(Color.WHITE)));
+    button.setEnabled(!busy&&!discovery.scanning()&&!remoteBusy);
     button.setOnClickListener(v->manualScan());
-    c.addView(button,new LinearLayout.LayoutParams(-1,dp(43)));
+    c.addView(button,new LinearLayout.LayoutParams(-1,dp(48)));
     if(!marketOpen && !serverConfigured()){
       spaceIn(c,6);
       c.addView(text("Full NSE discovery is limited to 16:30–07:30 IST. During market hours we monitor the saved shortlist.",11,AMBER,false));
@@ -487,7 +490,7 @@ public final class HomeActivity extends Activity {
     long since=System.currentTimeMillis()-verified;
     boolean authorized=secrets.configured()&&verified>0&&since>=0&&since<=15*60_000L;
     brand.addView(text(authorized?"✓ Groww authenticated":
-        secrets.configured()?"○ Groww saved · tap ⚙ to verify":"○ Groww not connected",
+        secrets.configured()?"○ Groww credentials saved · refresh automatic":"○ Groww not connected",
         11,authorized?GREEN:AMBER,true));
     top.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
     TextView settings=text("⚙",24,BLUE,true);
@@ -501,9 +504,9 @@ public final class HomeActivity extends Activity {
     LinearLayout tabs=new LinearLayout(this);tabs.setBackground(rounded(Color.WHITE));
     tabs.setPadding(dp(4),dp(4),dp(4),dp(4));
     for(String item:new String[]{"LIVE","CLOSED"}){
-      String caption=item.equals("LIVE")?"Live recommendations":"Closed recommendations";
+      String caption=item.equals("LIVE")?"Market watch":"History";
       TextView tab=text(caption,13,item.equals(section)?BLUE:MUTED,item.equals(section));
-      tab.setGravity(Gravity.CENTER);tab.setPadding(dp(6),dp(13),dp(6),dp(13));
+      tab.setGravity(Gravity.CENTER);tab.setPadding(dp(6),dp(15),dp(6),dp(15));tab.setMinimumHeight(dp(48));
       tab.setBackground(rounded(item.equals(section)?Color.rgb(229,240,250):Color.WHITE));
       LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
       tabs.addView(tab,lp);
@@ -732,7 +735,7 @@ public final class HomeActivity extends Activity {
     importButton.setText("Import sourced Alpha-30 factor CSV");
     importButton.setTextColor(Color.WHITE);importButton.setBackground(rounded(BLUE));
     importButton.setOnClickListener(v->importEvidence());
-    c.addView(importButton,new LinearLayout.LayoutParams(-1,dp(44)));
+    c.addView(importButton,new LinearLayout.LayoutParams(-1,dp(48)));
     spaceIn(c,5);
     c.addView(text("CSV: symbol,factor,value,observed_at_utc,source · factor 1–30 · value 0–1 · timestamp in UTC/offset · HTTPS URL.",
       11,MUTED,false));
