@@ -367,6 +367,19 @@ public final class MainActivity extends Activity {
       alerts.addView(btn("Stop phone monitoring",this::stopMonitoring),
         new LinearLayout.LayoutParams(-1,dp(48)));
     }
+    gap(alerts,8);
+    alerts.addView(btn("Open phone battery settings",()->{
+      try{
+        Intent details=new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+        details.setData(Uri.parse("package:"+getPackageName()));
+        startActivity(details);
+      }catch(Exception ex){
+        Toast.makeText(this,"Open Vivo Settings → Apps → MathFormula QA → Battery",
+          Toast.LENGTH_LONG).show();
+      }
+    }),new LinearLayout.LayoutParams(-1,dp(48)));
+    gap(alerts,5);
+    alerts.addView(text("Battery restrictions can defer local scanning. Allow foreground operation if supported; a server is still required for reliable closed-phone coverage.",11,MUTED,false));
     gap(page,2);
     LinearLayout server=card();
     server.addView(text("Independent NSE scanner",18,INK,true));
