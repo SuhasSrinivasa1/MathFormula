@@ -35,7 +35,7 @@ final class LocalDiscovery {
   LocalDiscovery(Context c){
     app=c.getApplicationContext();
     prefs=app.getSharedPreferences(PREF,Context.MODE_PRIVATE);
-    historyCache=app.getSharedPreferences("mathformula_eod_cache_v26",Context.MODE_PRIVATE);
+    historyCache=app.getSharedPreferences("mathformula_eod_cache_v31",Context.MODE_PRIVATE);
     // Upgrade from the v2.5 55-symbol heuristic: preserve prior history but
     // require a fresh v2.6 full-universe pass as soon as the app is opened.
     // Android may kill the process mid-scan; never leave a permanent RUNNING headline.
@@ -119,10 +119,10 @@ final class LocalDiscovery {
         h.candleMs=row.getLong("candleMs");h.open=row.getDouble("open");
         h.high=row.getDouble("high");h.low=row.getDouble("low");
         h.close=row.getDouble("close");h.volume=row.getDouble("volume");
-        h.previousClose=row.getDouble("previousClose");h.priorHigh20=row.getDouble("priorHigh20");
+        h.previousClose=row.getDouble("previousClose");h.priorHigh20=row.getDouble("priorHigh20");h.nextHigh20=row.getDouble("nextHigh20");
         h.avgVolume20=row.getDouble("avgVolume20");h.avgValue20=row.getDouble("avgValue20");
         h.completedSessions=row.getInt("sessions");
-        if(h.completedSessions>=61&&h.priorHigh20>0)return h;
+        if(h.completedSessions>=61&&h.priorHigh20>0&&h.nextHigh20>0)return h;
       }
     }catch(Exception ignored){}
     GrowwReadOnlyClient.NextSessionHistory h=api.nextSessionHistory(symbol);
@@ -130,7 +130,7 @@ final class LocalDiscovery {
       .put("sessionDate",h.sessionDate).put("candleMs",h.candleMs)
       .put("open",h.open).put("high",h.high).put("low",h.low)
       .put("close",h.close).put("volume",h.volume).put("previousClose",h.previousClose)
-      .put("priorHigh20",h.priorHigh20).put("avgValue20",h.avgValue20)
+      .put("priorHigh20",h.priorHigh20).put("nextHigh20",h.nextHigh20).put("avgValue20",h.avgValue20)
       .put("avgVolume20",h.avgVolume20).put("sessions",h.completedSessions);
     historyCache.edit().putString(symbol,cache.toString()).apply();
     return h;
