@@ -98,7 +98,8 @@ final class GrowwQuota {
       .put("historicalInternalRequestsPerMinute",HISTORY_MINUTE)
       .put("externalAppsIncluded",false);
   }
-  static org.json.JSONObject counters() throws org.json.JSONException {
+  static org.json.JSONObject counters(Context context) throws org.json.JSONException {
+    SharedPreferences recorded=context.getSharedPreferences(PREF,Context.MODE_PRIVATE);
     synchronized(LOCK){
       long now=SystemClock.elapsedRealtime();
       while(!liveSecond.isEmpty()&&now-liveSecond.peekFirst()>=1000)liveSecond.removeFirst();
@@ -109,7 +110,12 @@ final class GrowwQuota {
         .put("liveLastSecond",liveSecond.size())
         .put("liveLastMinute",liveMinute.size())
         .put("historicalLastMinute",historicalMinute.size())
-        .put("cooldownRemainingMs",Math.max(0,blockedUntil-now));
+        .put("cooldownRemainingMs",Math.max(
+          Math.max(0,blockedUntil-now),
+          Math.max(0,recorded.getLong("cooldownWallMs",0L)-System.currentTimeMillis())))
+        .put("totalProvider429",recorded.getInt("total429",0))
+        .put("lastProvider429Ms",recorded.getLong("last429At",0))
+        .put("localBudgetIsNotAccountWide",true);
     }
   }
   static String status(){
