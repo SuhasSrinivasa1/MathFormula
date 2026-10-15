@@ -146,6 +146,22 @@ public final class HomeActivity extends Activity {
     }
     handler.removeCallbacks(autoUpdate);
     handler.postDelayed(autoUpdate,200);
+    autoStartPhoneMonitoringIfEligible();
+  }
+  /** Phone monitoring is best effort; only a deployed server can scan continuously. */
+  private void autoStartPhoneMonitoringIfEligible(){
+    if(serverConfigured()||!open()||!secrets.configured())return;
+    if(getSharedPreferences("mathformula_auto_monitor_v29",MODE_PRIVATE)
+       .getBoolean("opted_out",false))return;
+    if(new WatchStore(this).enabled())return;
+    try{
+      android.content.Intent intent=new android.content.Intent(this,ScannerService.class)
+        .setAction(ScannerService.START);
+      if(Build.VERSION.SDK_INT>=26)startForegroundService(intent);else startService(intent);
+    }catch(RuntimeException ex){
+      new WatchStore(this).audit("MONITOR","SESSION","INACTIVE","START_BLOCKED",
+        "Android denied foreground start; use Settings to start local monitoring",0);
+    }
   }
   @Override protected void onPause(){handler.removeCallbacks(autoUpdate);super.onPause();}
   @Override protected void onDestroy(){worker.shutdownNow();super.onDestroy();}
@@ -454,9 +470,12 @@ public final class HomeActivity extends Activity {
     button.setAllCaps(false);button.setText(serverConfigured()?"Refresh scanner feed":
       safeOvernightWindow()?"Resume overnight full NSE scan":"Refresh selected 50 only");
     button.setTextSize(13);button.setTextColor(Color.WHITE);
-    button.setBackground(rounded(BLUE));button.setEnabled(!busy&&!discovery.scanning()&&!remoteBusy);
+    button.setBackground(new android.graphics.drawable.RippleDrawable(
+      android.content.res.ColorStateList.valueOf(Color.argb(60,255,255,255)),
+      rounded(BLUE),rounded(Color.WHITE)));
+    button.setEnabled(!busy&&!discovery.scanning()&&!remoteBusy);
     button.setOnClickListener(v->manualScan());
-    c.addView(button,new LinearLayout.LayoutParams(-1,dp(43)));
+    c.addView(button,new LinearLayout.LayoutParams(-1,dp(48)));
     if(!marketOpen && !serverConfigured()){
       spaceIn(c,6);
       c.addView(text("Full NSE discovery is limited to 16:30–07:30 IST. During market hours we monitor the saved shortlist.",11,AMBER,false));
@@ -471,7 +490,7 @@ public final class HomeActivity extends Activity {
     long since=System.currentTimeMillis()-verified;
     boolean authorized=secrets.configured()&&verified>0&&since>=0&&since<=15*60_000L;
     brand.addView(text(authorized?"✓ Groww authenticated":
-        secrets.configured()?"○ Groww saved · tap ⚙ to verify":"○ Groww not connected",
+        secrets.configured()?"○ Groww credentials saved · session check pending":"○ Groww not connected",
         11,authorized?GREEN:AMBER,true));
     top.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
     TextView settings=text("⚙",24,BLUE,true);
@@ -485,9 +504,9 @@ public final class HomeActivity extends Activity {
     LinearLayout tabs=new LinearLayout(this);tabs.setBackground(rounded(Color.WHITE));
     tabs.setPadding(dp(4),dp(4),dp(4),dp(4));
     for(String item:new String[]{"LIVE","CLOSED"}){
-      String caption=item.equals("LIVE")?"Live recommendations":"Closed recommendations";
+      String caption=item.equals("LIVE")?"Market watch":"History";
       TextView tab=text(caption,13,item.equals(section)?BLUE:MUTED,item.equals(section));
-      tab.setGravity(Gravity.CENTER);tab.setPadding(dp(6),dp(13),dp(6),dp(13));
+      tab.setGravity(Gravity.CENTER);tab.setPadding(dp(6),dp(15),dp(6),dp(15));tab.setMinimumHeight(dp(48));
       tab.setBackground(rounded(item.equals(section)?Color.rgb(229,240,250):Color.WHITE));
       LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);
       tabs.addView(tab,lp);
@@ -716,7 +735,7 @@ public final class HomeActivity extends Activity {
     importButton.setText("Import sourced Alpha-30 factor CSV");
     importButton.setTextColor(Color.WHITE);importButton.setBackground(rounded(BLUE));
     importButton.setOnClickListener(v->importEvidence());
-    c.addView(importButton,new LinearLayout.LayoutParams(-1,dp(44)));
+    c.addView(importButton,new LinearLayout.LayoutParams(-1,dp(48)));
     spaceIn(c,5);
     c.addView(text("CSV: symbol,factor,value,observed_at_utc,source · factor 1–30 · value 0–1 · timestamp in UTC/offset · HTTPS URL.",
       11,MUTED,false));
@@ -733,13 +752,17 @@ public final class HomeActivity extends Activity {
     JSONArray provisional=serverConfigured()?new JSONArray():preliminary.optJSONArray("top");
     if(provisional==null)provisional=new JSONArray();
     boolean nextSession="NEXT_SESSION_RESEARCH".equals(scan.optString("scanMode",""));
-    root.addView(text(nextSession?"Tomorrow's Top 3 research":"Live recommendations",22,INK,true));
+    root.addView(text(nextSession?"Next-session research watchlist":"Market watch · Alpha-30",22,INK,true));
     space(4);
     root.addView(text(nextSession?
        "Latest completed NSE session: "+scan.optString("sourceSessionDate","unknown")+
-       " · technical watchlist, not live BUY signals":
-       "Forward-looking watches, carried forward while the setup remains valid.",
+       " · technical watchlist, NOT today's confirmed live ranking":
+       "Research candidates; current market leadership can change. No broker-verified BUY.",
        12,MUTED,false));
+    space(9);
+    if(!serverConfigured()){
+      root.addView(text("PHONE-ONLY MODE: full NSE discovery runs overnight; intraday monitoring covers a limited saved priority list, NOT the full NSE universe. Deploy the independent server for persistent market-wide scanning.",12,AMBER,true));
+    }
     space(13);
     LinearLayout overview=card();
     overview.addView(text(live.length()+" historically verified watches · "+
@@ -911,7 +934,7 @@ public final class HomeActivity extends Activity {
       String issue=null;
       try{
         // Legacy manually watched symbols are diagnostic history, not active Top 3.
-        String manual=getPreferences(MODE_PRIVATE).getString("watchlist","TARIL,GAEL,ADVANCE");
+        String manual=getPreferences(MODE_PRIVATE).getString("watchlist","");
         List<String> selected=new ArrayList<>();
         for(String entry:manual.split(",")){
           String symbol=entry.trim();

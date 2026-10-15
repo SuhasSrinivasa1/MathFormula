@@ -134,17 +134,26 @@ public final class ScannerService extends Service {
     store.audit("MONITOR","SESSION","STOPPED","ACTIVE","User-started read-only session",0);
     loop.post(pulse);return START_NOT_STICKY;
   }
-  /** Latest auto-discovered candidates only; never restore hardcoded original picks. */
+  /** Follow the overnight watch into the NEXT trading day, not only the next 25 minutes.
+   *  The fallback remains research-only: all Alpha-30 BUY gates are still independently required.
+   */
   private List<String> watchlist(){
     List<String> symbols=new ArrayList<>();
-    org.json.JSONObject record=new LocalDiscovery(this).latest();
+    LocalDiscovery discovery=new LocalDiscovery(this);
+    org.json.JSONObject record=discovery.latest();
     long stamp=record.optLong("scannedAtMs",0L);
-    if(stamp<=0||System.currentTimeMillis()-stamp>25*60_000L)return symbols;
-    org.json.JSONArray top=record.optJSONArray("top");
-    if(top==null)return symbols;
-    for(int i=0;i<Math.min(3,top.length());i++){
-      org.json.JSONObject stock=top.optJSONObject(i);if(stock==null)continue;
-      String name=stock.optString("symbol","");
+    long age=System.currentTimeMillis()-stamp;
+    if(stamp<=0 || age<0 || age>4L*24*60*60*1000)return symbols;
+    // Limit individual depth/candle reads; the separate batch refresh covers the priority 50.
+    org.json.JSONArray verified=record.optJSONArray("top");
+    if(verified!=null)for(int i=0;i<verified.length()&&symbols.size()<5;i++){
+      org.json.JSONObject stock=verified.optJSONObject(i);
+      String name=stock==null?"":stock.optString("symbol","");
+      if(name.matches("[A-Z0-9&-]{1,26}")&&!symbols.contains(name))symbols.add(name);
+    }
+    org.json.JSONArray priority=discovery.priorityWatchlist();
+    for(int i=0;i<priority.length()&&symbols.size()<5;i++){
+      String name=priority.optString(i,"");
       if(name.matches("[A-Z0-9&-]{1,26}")&&!symbols.contains(name))symbols.add(name);
     }
     return symbols;

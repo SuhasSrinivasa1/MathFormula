@@ -90,7 +90,10 @@ public final class MainActivity extends Activity {
   }
   private Button btn(String caption,Runnable action){
     Button b=new Button(this);b.setAllCaps(false);b.setText(caption);
-    b.setTextSize(13);b.setTextColor(Color.WHITE);b.setBackground(background(BLUE,11));
+    b.setTextSize(14);b.setTextColor(Color.WHITE);b.setMinimumHeight(dp(48));
+    b.setBackground(new android.graphics.drawable.RippleDrawable(
+      android.content.res.ColorStateList.valueOf(Color.argb(56,255,255,255)),
+      background(BLUE,11),background(Color.WHITE,11)));
     b.setOnClickListener(v->action.run());return b;
   }
   private void addButtonRow(String a,Runnable ar,String b,Runnable br){
@@ -246,7 +249,12 @@ public final class MainActivity extends Activity {
           throw new IllegalStateException("Groww returned no usable NSE cash quote");
         tradeAt=check.lastTradeMs;
       }catch(SecurityException e){
-        problem="Groww authentication rejected · check TOTP token and secret";
+        String detail=e.getMessage()==null?"":e.getMessage();
+        problem=detail.contains("403")?
+          "Groww access denied (403) · verify daily account/API approval in Groww":
+          detail.contains("401")?
+          "Groww token rejected (401) · saved TOTP remains; use Reconnect":
+          "Groww authorization could not be verified · check saved TOTP and account approval";
       }catch(Exception e){
         String lower=e.getMessage()==null?"":e.getMessage().toLowerCase(Locale.US);
         problem=lower.contains("cooldown")?"Groww authentication cooldown · retry after one minute":
@@ -282,16 +290,22 @@ public final class MainActivity extends Activity {
     page.addView(text("MATHFORMULA v"+version+"  ·  ALPHA-30 RESEARCH",11,BLUE,true));
     gap(page,17);
     LinearLayout connection=card();
-    connection.addView(text("Groww connection",19,INK,true));
+    connection.addView(text("Connect Groww",19,INK,true));
+    gap(connection,4);
+    connection.addView(text("Read-only NSE market data. One-time TOTP setup is encrypted with Android Keystore. We never request your Groww password or place orders.",12,MUTED,false));
     gap(connection,9);
     String label;
     int stateColor;
     if(growwChecking){label="◌ Checking Groww authentication";stateColor=AMBER;}
     else if(verifiedRecently()){label="✓ Groww authenticated";stateColor=GREEN;}
     else if(!vault.configured()){label="○ Groww credentials not configured";stateColor=AMBER;}
-    else if(lastVerified()>0){label="◷ Previously authenticated · verify again";stateColor=AMBER;}
-    else {label="○ Credentials saved · not yet authenticated";stateColor=AMBER;}
+    else if(lastVerified()>0){label="○ TOTP saved · connection verification outdated";stateColor=AMBER;}
+    else {label="○ Groww not connected · setup required";stateColor=AMBER;}
     connection.addView(text(label,15,stateColor,true));
+    if(vault.configured()){
+      gap(connection,5);
+      connection.addView(text("Groww TOTP credentials are securely saved. The daily access token expires at 06:00 IST; the app attempts renewal as needed; Groww may require an account-side approval. Old verification does not mean credentials were erased.",12,MUTED,false));
+    }
     if(lastVerified()>0){
       gap(connection,4);
       connection.addView(text("Last successful API verification: "+clock(lastVerified()),
@@ -308,13 +322,13 @@ public final class MainActivity extends Activity {
         verifiedRecently()?GREEN:AMBER,false));
     }
     gap(connection,14);
-    connection.addView(text("Groww TOTP token",13,INK,true));
+    connection.addView(text("1 · Groww TOTP API token",13,INK,true));
     gap(connection,5);
     growwTokenInput=passwordField(vault.get("totp_token").isEmpty()?
       "Enter Groww TOTP token":"Saved securely · leave blank to keep");
     connection.addView(growwTokenInput,new LinearLayout.LayoutParams(-1,dp(53)));
     gap(connection,13);
-    connection.addView(text("Groww TOTP secret",13,INK,true));
+    connection.addView(text("2 · Groww Base32 TOTP secret",13,INK,true));
     gap(connection,5);
     growwSecretInput=passwordField(vault.get("totp_secret").isEmpty()?
       "Enter Base32 TOTP secret":"Saved securely · leave blank to keep");
@@ -324,14 +338,16 @@ public final class MainActivity extends Activity {
     gap(connection,14);
     LinearLayout actions=new LinearLayout(this);
     actions.setOrientation(LinearLayout.HORIZONTAL);
-    Button save=btn("Save",this::saveGroww);
-    Button connect=btn(growwChecking?"Checking…":"↻ Refresh & Connect",this::refreshGrowwConnection);
+    Button save=btn("Save only",this::saveGroww);
+    Button connect=btn(growwChecking?"Checking…":"Connect / Recheck",this::refreshGrowwConnection);
     save.setEnabled(!growwChecking);connect.setEnabled(!growwChecking);
     LinearLayout.LayoutParams one=new LinearLayout.LayoutParams(0,dp(48),1);
     one.rightMargin=dp(9);
     actions.addView(save,one);
     actions.addView(connect,new LinearLayout.LayoutParams(0,dp(48),2));
     connection.addView(actions);
+    gap(connection,9);
+    connection.addView(text("SAVED = stored securely; CONNECTED = verified Groww API access; APPROVAL REQUIRED = provider permission missing. Access tokens expire at 06:00 IST and may need renewed approval.",11,MUTED,false));
     gap(page,2);
     LinearLayout alerts=card();
     alerts.addView(text("Monitoring & notifications",18,INK,true));
@@ -345,11 +361,11 @@ public final class MainActivity extends Activity {
     alerts.addView(text("Last research alert evaluation: "+clock(ResearchAlerts.lastCheck(this)),11,MUTED,false));
     gap(alerts,9);
     alerts.addView(btn(watchStore.enabled()?"Restart phone monitoring":"Start phone monitoring",
-      this::startMonitoring),new LinearLayout.LayoutParams(-1,dp(45)));
+      this::startMonitoring),new LinearLayout.LayoutParams(-1,dp(48)));
     if(watchStore.enabled()){
       gap(alerts,7);
       alerts.addView(btn("Stop phone monitoring",this::stopMonitoring),
-        new LinearLayout.LayoutParams(-1,dp(41)));
+        new LinearLayout.LayoutParams(-1,dp(48)));
     }
     gap(page,2);
     LinearLayout preference=card();
@@ -358,7 +374,7 @@ public final class MainActivity extends Activity {
     preference.addView(text("Frozen Alpha-30 model · unchanged 30 factors",12,MUTED,false));
     gap(preference,9);
     preference.addView(btn("View all 30 model factors",this::showFactors),
-      new LinearLayout.LayoutParams(-1,dp(43)));
+      new LinearLayout.LayoutParams(-1,dp(48)));
     gap(page,2);
     LinearLayout privacy=card();
     privacy.addView(text("Privacy & diagnostics",18,INK,true));
@@ -366,15 +382,15 @@ public final class MainActivity extends Activity {
     privacy.addView(text("Read-only Groww integration · no order placement · encrypted Android Keystore storage.",12,MUTED,false));
     gap(privacy,9);
     privacy.addView(btn("Export sanitized diagnostics",this::exportLogs),
-      new LinearLayout.LayoutParams(-1,dp(43)));
+      new LinearLayout.LayoutParams(-1,dp(48)));
     gap(privacy,7);
     privacy.addView(btn("View local audit",this::showAudit),
-      new LinearLayout.LayoutParams(-1,dp(43)));
+      new LinearLayout.LayoutParams(-1,dp(48)));
     gap(page,4);
     page.addView(text("Groww provides market data, not every required financial, news and macro factor. Until those are verified, opportunities remain research-only.",11,AMBER,false));
     gap(page,12);
     page.addView(btn("← Back to recommendations",this::finish),
-      new LinearLayout.LayoutParams(-1,dp(43)));
+      new LinearLayout.LayoutParams(-1,dp(48)));
   }
 
   private void drawSaved(String symbol,JSONObject j){
@@ -442,13 +458,15 @@ public final class MainActivity extends Activity {
     try{
       Intent intent=new Intent(this,ScannerService.class).setAction(ScannerService.START);
       if(Build.VERSION.SDK_INT>=26)startForegroundService(intent);else startService(intent);
-      status="Requested Android background monitoring; check scan timestamp for verification";
+      getSharedPreferences("mathformula_auto_monitor_v29",MODE_PRIVATE).edit().putBoolean("opted_out",false).apply();
+       status="Requested Android background monitoring; check scan timestamp for verification";
       render();
     }catch(RuntimeException e){status="Android blocked background start; retry while app is visible";render();}
   }
   private void stopMonitoring(){
     Intent intent=new Intent(this,ScannerService.class).setAction(ScannerService.STOP);
     startService(intent);watchStore.setEnabled(false);
+    getSharedPreferences("mathformula_auto_monitor_v29",MODE_PRIVATE).edit().putBoolean("opted_out",true).apply();
     status="Stop requested; monitoring session will close";render();
   }
   private void showAudit(){

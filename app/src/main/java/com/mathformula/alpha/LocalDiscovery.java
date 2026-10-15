@@ -38,6 +38,16 @@ final class LocalDiscovery {
     historyCache=app.getSharedPreferences("mathformula_eod_cache_v26",Context.MODE_PRIVATE);
     // Upgrade from the v2.5 55-symbol heuristic: preserve prior history but
     // require a fresh v2.6 full-universe pass as soon as the app is opened.
+    // Android may kill the process mid-scan; never leave a permanent RUNNING headline.
+    // Resumable history journals remain intact for the next allowed research window.
+    if(!RUNNING.get() && prefs.getString("lastAttemptState","")
+        .startsWith("Scanning NSE equity universe")){
+      JSONObject checkpoint=inProgress();
+      prefs.edit().putString("lastAttemptState",
+        "INTERRUPTED · prior scan stopped after "+checkpoint.optInt("checked",0)+
+        "/"+checkpoint.optInt("total",0)+" history checks; resume pending")
+        .putString("lastError","Background scan interrupted; no new completed shortlist").apply();
+    }
     if(!prefs.getBoolean("v26_migrated",false)){
       prefs.edit().putBoolean("v26_migrated",true)
         .putLong("lastScan",0).putLong("lastAttempt",0)
@@ -351,6 +361,7 @@ final class LocalDiscovery {
     }catch(Exception ignored){}
   }
   void failure(String why){
+    new WatchStore(app).audit("DISCOVERY","UNIVERSE","RUNNING","FAILED",safe(why),0);
     prefs.edit()
       .putString("lastAttemptState","Failed · "+safe(why))
       .putString("lastError",safe(why)).apply();

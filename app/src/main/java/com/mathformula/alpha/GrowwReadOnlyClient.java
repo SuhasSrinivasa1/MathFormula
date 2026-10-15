@@ -59,7 +59,12 @@ final class GrowwReadOnlyClient {
         try(OutputStream out=c.getOutputStream()){out.write(body.getBytes(StandardCharsets.UTF_8));}
       }
       int status=c.getResponseCode();
-      if(status==401||status==403)throw new SecurityException("Groww authorization rejected (HTTP "+status+")");
+      if(status==401){
+        if(!path.equals("/v1/token/api/access"))resetSession();
+        throw new SecurityException("Groww access token rejected (401). Session cleared for safe renewal; saved TOTP credentials retained");
+      }
+      if(status==403)
+        throw new SecurityException("Groww access denied (403). Check account approval, API subscription and permissions; stored TOTP credentials retained");
       if(status==429){GrowwQuota.backoff(quotaContext);throw new IllegalStateException("Groww rate limit reached (HTTP 429); 30 minute account cooldown enabled");}
       if(status<200||status>=300)throw new IllegalStateException("Groww HTTP "+status);
       StringBuilder sb=new StringBuilder();
@@ -221,7 +226,7 @@ final class GrowwReadOnlyClient {
     String path="/v1/live-data/quote?exchange=NSE&segment=CASH&trading_symbol="+encoded(symbol);
     JSONObject json;
     try {json=call("GET",path,token(),null);}
-    catch(SecurityException denied){resetSession();throw denied;}
+    catch(SecurityException denied){throw denied;}
     JSONObject p=json.optJSONObject("payload");
     if(p==null)throw new IllegalStateException("Groww quote payload missing");
     Market m=new Market();m.symbol=symbol;

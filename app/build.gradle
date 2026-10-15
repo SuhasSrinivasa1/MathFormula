@@ -10,8 +10,9 @@ android {
         applicationId 'com.mathformula.alpha.stable'
         minSdk 26
         targetSdk 35
-        versionCode 280
-        versionName '2.8.0'
+        versionCode 290
+        versionName '2.9.0'
+        manifestPlaceholders = [appLabel: 'MathFormula']
     }
     signingConfigs {
         stableRelease {
@@ -25,6 +26,11 @@ android {
         }
     }
     buildTypes {
+        debug {
+            applicationIdSuffix '.qa'
+            versionNameSuffix '-qa'
+            manifestPlaceholders = [appLabel: 'MathFormula QA']
+        }
         release {
             if (stableKeystore && stablePassword) signingConfig signingConfigs.stableRelease
             minifyEnabled false
@@ -35,4 +41,8 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
 }
