@@ -43,6 +43,7 @@ public final class HomeActivity extends Activity {
   private final Handler handler=new Handler(Looper.getMainLooper());
   private final ExecutorService worker=Executors.newSingleThreadExecutor();
   private LocalDiscovery discovery;
+  private IntradayRadar intradayRadar;
   private RecommendationLedger ledger;
   private Alpha30EvidenceStore evidenceStore;
   private String evidenceImportNote="";
@@ -54,7 +55,7 @@ public final class HomeActivity extends Activity {
   private GrowwReadOnlyClient groww;
   private LinearLayout root;
   private String section="LIVE",scanProgress="";
-  private boolean busy=false,quoteBusy=false,priorityBusy=false;
+  private boolean busy=false,quoteBusy=false,priorityBusy=false,radarBusy=false;
   private long lastPriorityAttempt=0;
   private long lastQuoteAttempt=0,lastAlertAttempt=0;
   private boolean startedWhileOpen=false;
@@ -66,6 +67,8 @@ public final class HomeActivity extends Activity {
       startedWhileOpen=open;
       if(serverConfigured())fetchRemote();
       else if(open){
+        // Intraday universe quotes must be independently refreshed; EOD history stays frozen.
+        refreshIntradayRadarIfDue();
         // Never reopen all-NSE historical verification during the market session.
         refreshPriorityWatchlist();
         refreshPrices();
@@ -115,6 +118,7 @@ public final class HomeActivity extends Activity {
     super.onCreate(saved);
     secrets=new SecureGrowwStore(this);groww=new GrowwReadOnlyClient(secrets);
     discovery=new LocalDiscovery(this);
+    intradayRadar=new IntradayRadar(this);
     ledger=new RecommendationLedger(this);
     evidenceStore=new Alpha30EvidenceStore(this);
     ResearchAlerts.channel(this);
@@ -409,6 +413,10 @@ public final class HomeActivity extends Activity {
           discovery.priorityWatchlist().length()+" (not yet refreshed during trading)",11,BLUE,false));
       }
       c.addView(text("Last scan attempt: "+time(discovery.lastAttempt()),12,MUTED,false));
+      c.addView(text("Intraday NSE radar: "+
+        (radarBusy?"RUNNING":intradayRadar.fresh()?"CURRENT":intradayRadar.issue().isEmpty()?"WAITING":"FAILED · "+intradayRadar.issue())+
+        " · last complete "+time(intradayRadar.completedAt()),12,
+        intradayRadar.fresh()?GREEN:AMBER,true));
       c.addView(text("Result: "+discovery.lastAttemptState(),12,
         discovery.error().isEmpty()?MUTED:AMBER,false));
       if("NEXT_SESSION_RESEARCH".equals(discovery.latest().optString("scanMode"))){
@@ -460,7 +468,7 @@ public final class HomeActivity extends Activity {
       }
       spaceIn(c,7);
       c.addView(text("Whole NSE universe: once per completed EOD, only 16:30–07:30 IST; resumable overnight.",11,MUTED,false));
-      c.addView(text("Market hours: batched LTP monitoring of up to 50 shortlisted symbols, plus detailed Top 3 checks.",11,MUTED,false));
+      c.addView(text("Market hours: best-effort 15-minute NSE-wide batch radar plus up to 50 priority quotes and 5 detailed candidates.",11,MUTED,false));
       c.addView(text("Groww historical budget: max 3/min. Existing 429 cooldown: 30 min; other apps share account limits.",11,AMBER,false));
       c.addView(text(nextScanTime()==0?"Next full-universe scan: after 16:30 IST or already complete":
         "Next overnight research eligibility: "+time(nextScanTime()),11,BLUE,true));
@@ -743,6 +751,78 @@ public final class HomeActivity extends Activity {
       spaceIn(c,4);c.addView(text(evidenceImportNote,11,AMBER,false));
     }
   }
+
+  /** Broad live NSE price discovery; this is research ONLY, never a BUY validator. */
+  private void refreshIntradayRadarIfDue(){
+    if(!open()||serverConfigured()||!secrets.configured()||
+       radarBusy||discovery.scanning()||!intradayRadar.due())return;
+    radarBusy=true;
+    worker.execute(()->{
+      String problem="";
+      try{
+        intradayRadar.scan(groww,discovery,update->{});
+      }catch(Exception ex){
+        problem=ex instanceof SecurityException?"Groww approval/authentication required":
+          ex.getMessage()!=null&&ex.getMessage().contains("429")?
+          "Groww quota reached · retry after cooldown":
+          "Market-wide radar interrupted · check scanner health";
+      }
+      final String message=problem;
+      handler.post(()->{
+        radarBusy=false;
+        if(!message.isEmpty())scanProgress=message;
+        render();
+      });
+    });
+  }
+  /** Clear technical-only early discovery, separately from the frozen Alpha-30 BUY engine. */
+  private void radarPanel(){
+    if(serverConfigured()||!open())return;
+    JSONObject snapshot=intradayRadar.latest();
+    JSONArray pool=intradayRadar.currentCandidates();
+    long at=snapshot.optLong("observedMs",0L);
+    if(pool==null||pool.length()==0){
+      if(radarBusy)root.addView(text("Intraday NSE radar · scanning current market breadth…",
+          12,BLUE,true));
+      else if(at>0&&!intradayRadar.fresh())
+        root.addView(text("Intraday NSE radar: last data is stale · no current leads shown.",
+          12,AMBER,true));
+      return;
+    }
+    root.addView(text("Today's fresh NSE discoveries",18,INK,true));
+    space(4);
+    root.addView(text("Screened "+snapshot.optInt("scannedUniverse",0)+
+      " NSE equities · "+snapshot.optInt("quotesLoaded",0)+" prices · "+
+      time(at)+" · "+snapshot.optInt("historicalReferencesMatched",0)+
+      " reusable H20 histories. Strictly research-only; not all 30 factors verified.",
+      11,MUTED,false));
+    space(9);
+    for(int i=0;i<Math.min(5,pool.length());i++){
+      JSONObject lead=pool.optJSONObject(i);
+      if(lead==null)continue;
+      LinearLayout card=card();
+      String symbol=lead.optString("symbol","UNKNOWN");
+      card.addView(text((i+1)+". "+symbol+
+        (lead.optBoolean("historyVerified")?" · H20 CHECKED":" · PRELIMINARY"),
+        16,INK,true));
+      spaceIn(card,5);
+      card.addView(text(money(lead.optDouble("price",Double.NaN))+
+        "  ·  from open "+percent(lead.optDouble("fromOpenPct",Double.NaN)),
+        15,BLUE,true));
+      if(lead.optBoolean("historyVerified")){
+        spaceIn(card,4);
+        card.addView(text("Prior 20-session high: "+
+          money(lead.optDouble("breakoutLevel",Double.NaN))+
+          " · distance "+percent(lead.optDouble("distancePct",Double.NaN)),
+          12,INK,false));
+      }
+      spaceIn(card,5);
+      card.addView(text("WATCH ONLY · Bulk quotes lack broker trade timestamp and live gates. "+
+        "No Alpha-30 BUY verified.",11,AMBER,true));
+    }
+    space(10);
+  }
+
   private void renderLive(){
     JSONObject scan=discovery.latest();
     JSONArray latestTop=scan.optJSONArray("top");
@@ -761,7 +841,7 @@ public final class HomeActivity extends Activity {
        12,MUTED,false));
     space(9);
     if(!serverConfigured()){
-      root.addView(text("PHONE-ONLY MODE: full NSE discovery runs overnight; intraday monitoring covers a limited saved priority list, NOT the full NSE universe. Deploy the independent server for persistent market-wide scanning.",12,AMBER,true));
+      root.addView(text("PHONE-ONLY: broad NSE price radar refreshes on a best-effort 15-minute schedule. Only a small candidate list receives detailed monitoring; an independent server is still needed for uninterrupted scans and verified BUY alerts.",12,AMBER,true));
     }
     space(13);
     LinearLayout overview=card();
@@ -789,7 +869,9 @@ public final class HomeActivity extends Activity {
       summaryCard(scan,false);
       overnightEvidencePanel(scan);
     }
-    if(live.length()==0&&provisional.length()==0){
+    radarPanel();
+    if(live.length()==0&&provisional.length()==0 &&
+       (!open()||intradayRadar.currentCandidates()==null||intradayRadar.currentCandidates().length()==0)){
       LinearLayout empty=card();
       empty.addView(text(busy?"Scanning NSE…":"No active verified research shortlist",16,INK,true));
       spaceIn(empty,7);
