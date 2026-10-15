@@ -1,7 +1,7 @@
 name: MathFormula stable Android release
 on:
   push:
-    branches: [main, 'feat/**']
+    branches: [main, 'feat/**', 'fix/**']
   workflow_dispatch:
 concurrency:
   group: mathformula-v29-${{ github.sha }}
@@ -47,7 +47,13 @@ jobs:
       - name: Compile release
         env:
           MATHFORMULA_RELEASE_PASSWORD: ${{ secrets.MATHFORMULA_RELEASE_PASSWORD }}
-        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease
+      - name: Upload debug APK for Android QA (not a production upgrade)
+        uses: actions/upload-artifact@v4
+        with:
+          name: MathFormula-v2.9.0-DEBUG-QA
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
       - name: Stage APK
         run: |
           if [[ "$STABLE_SIGNING_CONFIGURED" == "true" ]]; then
@@ -80,7 +86,7 @@ jobs:
           path: apksigner.jar
           if-no-files-found: error
       - name: Publish signed release only
-        if: env.STABLE_SIGNING_CONFIGURED == 'true' && github.ref == 'refs/heads/fix/v29-stability-audit-20261015'
+        if: env.STABLE_SIGNING_CONFIGURED == 'true' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
