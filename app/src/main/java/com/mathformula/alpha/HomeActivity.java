@@ -1,6 +1,9 @@
 package com.mathformula.alpha;
 
-import android.app.Activity;
+import androidx.appcompat.app.AppCompatActivity;
+import com.google.android.material.card.MaterialCardView;
+import com.google.android.material.button.MaterialButton;
+import android.content.res.ColorStateList;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -35,7 +38,7 @@ import org.json.JSONArray;
  * Only two sections: LIVE (current market observations) and CLOSED (completed
  * market-session snapshots). No buttons to refresh, start monitoring, or trade.
  */
-public final class HomeActivity extends Activity {
+public final class HomeActivity extends AppCompatActivity {
   private static final int INK=Color.rgb(20,38,56),BLUE=Color.rgb(24,91,154),
       MUTED=Color.rgb(103,113,127),GREEN=Color.rgb(19,123,85),
       AMBER=Color.rgb(158,98,19),RED=Color.rgb(180,59,58);
@@ -93,10 +96,15 @@ public final class HomeActivity extends Activity {
   }
   private void space(int dp){root.addView(new View(this),new LinearLayout.LayoutParams(1,dp(dp)));}
   private LinearLayout card(){
+    MaterialCardView shell=new MaterialCardView(this);
+    shell.setRadius(dp(20));shell.setCardElevation(dp(2));
+    shell.setCardBackgroundColor(Color.WHITE);
+    shell.setStrokeColor(Color.rgb(227,233,240));shell.setStrokeWidth(dp(1));
     LinearLayout c=new LinearLayout(this);c.setOrientation(LinearLayout.VERTICAL);
-    c.setPadding(dp(16),dp(16),dp(16),dp(16));c.setBackground(rounded(Color.WHITE));
-    LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(13);
-    root.addView(c,p);c.setElevation(dp(1));return c;
+    c.setPadding(dp(18),dp(18),dp(18),dp(18));
+    shell.addView(c,new MaterialCardView.LayoutParams(-1,-2));
+    LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(14);
+    root.addView(shell,p);return c;
   }
   private String time(long ms){
     if(ms<=0)return "Not available";
@@ -475,13 +483,11 @@ public final class HomeActivity extends Activity {
         "Next overnight research eligibility: "+time(nextScanTime()),11,BLUE,true));
     }
     spaceIn(c,11);
-    android.widget.Button button=new android.widget.Button(this);
+    MaterialButton button=new MaterialButton(this);
     button.setAllCaps(false);button.setText(serverConfigured()?"Refresh scanner feed":
       safeOvernightWindow()?"Resume overnight full NSE scan":"Refresh selected 50 only");
     button.setTextSize(13);button.setTextColor(Color.WHITE);
-    button.setBackground(new android.graphics.drawable.RippleDrawable(
-      android.content.res.ColorStateList.valueOf(Color.argb(60,255,255,255)),
-      rounded(BLUE),rounded(Color.WHITE)));
+    button.setBackgroundTintList(ColorStateList.valueOf(BLUE));button.setCornerRadius(dp(14));
     button.setEnabled(!busy&&!discovery.scanning()&&!remoteBusy);
     button.setOnClickListener(v->manualScan());
     c.addView(button,new LinearLayout.LayoutParams(-1,dp(48)));
@@ -775,10 +781,10 @@ public final class HomeActivity extends Activity {
       }
     }
     spaceIn(c,10);
-    android.widget.Button importButton=new android.widget.Button(this);
+    MaterialButton importButton=new MaterialButton(this);
     importButton.setAllCaps(false);
     importButton.setText("Import sourced Alpha-30 factor CSV");
-    importButton.setTextColor(Color.WHITE);importButton.setBackground(rounded(BLUE));
+    importButton.setTextColor(Color.WHITE);importButton.setBackgroundTintList(ColorStateList.valueOf(BLUE));importButton.setCornerRadius(dp(14));
     importButton.setOnClickListener(v->importEvidence());
     c.addView(importButton,new LinearLayout.LayoutParams(-1,dp(48)));
     spaceIn(c,5);
