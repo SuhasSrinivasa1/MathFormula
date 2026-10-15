@@ -137,6 +137,21 @@ final class LocalDiscovery {
        cacheCutoffDate().equals(last.optString("researchCutoffDate")) &&
        last.optBoolean("completedFullResearch",false);
   }
+  JSONArray partialVerifiedResearch(){
+    JSONArray out=new JSONArray();
+    JSONObject saved=historyJournal(cacheCutoffDate());
+    ArrayList<JSONObject> records=new ArrayList<>();
+    java.util.Iterator<String> symbols=saved.keys();
+    while(symbols.hasNext()){
+      JSONObject entry=saved.optJSONObject(symbols.next());
+      JSONObject candidate=entry==null?null:entry.optJSONObject("candidate");
+      if(candidate!=null)records.add(candidate);
+    }
+    records.sort((a,b)->Double.compare(
+      b.optDouble("preliminaryRank",0),a.optDouble("preliminaryRank",0)));
+    for(int i=0;i<Math.min(3,records.size());i++)out.put(records.get(i));
+    return out;
+  }
   JSONArray priorityWatchlist(){
     try{return new JSONArray(prefs.getString("overnightPriority50","[]"));}
     catch(Exception ignored){return new JSONArray();}
@@ -335,6 +350,9 @@ final class LocalDiscovery {
         .put("lastCompleted",latest()).put("closedSessions",sessionSnapshots())
         .put("previouslyTracked",history())
         .put("preliminaryTopThree",preview())
+        .put("overnightResumedCandidates",partialVerifiedResearch())
+        .put("overnightPriority50Count",priorityWatchlist().length())
+        .put("overnightPriority50Quotes",priorityLatest())
         .put("scanProgress",inProgress())
         .put("lastAttemptMs",lastAttempt())
         .put("lastAttemptState",lastAttemptState())
