@@ -78,10 +78,14 @@ final class LocalDiscovery {
   private String classify(Exception ex){
     if(ex instanceof SecurityException)return "AUTH_REJECTED";
     String msg=ex.getMessage()==null?"":ex.getMessage().toLowerCase(Locale.US);
-    if(msg.contains("429")||msg.contains("rate limit"))return "API_RATE_LIMIT";
+    if(msg.contains("429")||msg.contains("rate limit")||msg.contains("cooldown"))return "API_RATE_LIMIT";
+    if(msg.contains("historical_response_missing"))return "HISTORICAL_RESPONSE_MISSING";
+    if(msg.contains("history_timestamp_or_candle_parse_empty"))return "HISTORICAL_PARSE_OR_EMPTY";
+    if(msg.contains("insufficient_completed_sessions"))return "UNDER_61_TRADING_SESSIONS";
+    if(msg.contains("eod_last_session_too_old"))return "STALE_LAST_DAILY_CANDLE";
     if(msg.contains("http 4")||msg.contains("http 5"))return "API_HTTP_ERROR";
     if(msg.contains("daily")||msg.contains("candles")||msg.contains("history")||msg.contains("session"))
-      return "HISTORY_MISSING_OR_INSUFFICIENT";
+      return "HISTORY_NOT_AVAILABLE";
     if(msg.contains("timed out")||msg.contains("connection")||msg.contains("network"))
       return "NETWORK_ERROR";
     return "HISTORY_API_OR_PARSE_ERROR";
@@ -667,7 +671,8 @@ final class LocalDiscovery {
         }catch(Exception invalid){
           String code=classify(invalid);
           if("API_RATE_LIMIT".equals(code)||"NETWORK_ERROR".equals(code)||
-             "API_HTTP_ERROR".equals(code)||invalid instanceof InterruptedException){
+             "API_HTTP_ERROR".equals(code)||"HISTORICAL_RESPONSE_MISSING".equals(code)||
+             invalid instanceof InterruptedException){
             retryLater=true;
             countFailure(rejectionReasons,code);
             throw invalid;
