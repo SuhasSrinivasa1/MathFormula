@@ -23,10 +23,11 @@ public class InternetResearchEngineTest {
     symbols.put("BHEL");symbols.put("BHEL");symbols.put("GAEL");
     symbols.put("TATAELXSI");symbols.put("HCLTECH");symbols.put("not a symbol");
     List<String> queries=InternetResearchEngine.queries(symbols);
-    assertEquals(10,queries.size()); // 3 x 3 plus macro
+    assertEquals(13,queries.size()); // 4 distinct tickers x 3 plus macro
     assertTrue(queries.get(0).contains("BHEL"));
     assertTrue(queries.get(3).contains("GAEL"));
     assertTrue(queries.get(6).contains("TATAELXSI"));
+    assertTrue(queries.get(9).contains("HCLTECH"));
     for(String query:queries)assertTrue(query.length()<600);
   }
   @Test public void suspiciousDomainsDoNotMasqueradeAsOfficial(){
