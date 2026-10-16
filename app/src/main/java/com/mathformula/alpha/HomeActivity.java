@@ -905,6 +905,23 @@ public final class HomeActivity extends AppCompatActivity {
       11,MUTED,false));
     spaceIn(shell,4);
     shell.addView(text("Searches happen directly on this phone. A public NSE/BSE webpage or web snippet must still be parsed and verified before any of F01–T30 is scored.",11,AMBER,false));
+    spaceIn(shell,7);
+    OfficialFinancialCollector primary=new OfficialFinancialCollector(this);
+    JSONObject financial=primary.latest();
+    shell.addView(text("NSE filing facts: "+primary.status()+
+      " · last updated "+time(primary.updated()),11,MUTED,false));
+    JSONArray raw=financial.optJSONArray("rawFacts");
+    if(raw!=null&&raw.length()>0){
+      spaceIn(shell,5);
+      shell.addView(text("Extracted raw amounts (NOT normalized Alpha-30 scores):",12,INK,true));
+      for(int i=0;i<Math.min(3,raw.length());i++){
+        JSONObject item=raw.optJSONObject(i);if(item==null)continue;
+        shell.addView(text(item.optString("hint","")+" · "+
+          item.optString("value","")+" "+item.optString("unitRef","")+
+          " · context "+item.optString("contextRef","")+
+          " · issuer and fiscal basis not verified",11,AMBER,false));
+      }
+    }
     if(results==null||results.length()==0){
       spaceIn(shell,7);
       shell.addView(text(web.configured()?

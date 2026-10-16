@@ -56,10 +56,10 @@ final class InternetResearchEngine {
     if(today().equals(prefs.getString("completedDay","")))return false;
     return now-prefs.getLong("lastAttempt",0L)>5*60_000L;
   }
-  /** Pure function: bounded 10 queries for 3 priority symbols and 1 market query. */
+  /** Up to six priority companies and one macro sweep, rate-limited across background jobs. */
   static List<String> queries(JSONArray symbols){
     LinkedHashSet<String> unique=new LinkedHashSet<>();
-    if(symbols!=null)for(int i=0;i<symbols.length()&&unique.size()<3;i++){
+    if(symbols!=null)for(int i=0;i<symbols.length()&&unique.size()<6;i++){
       String symbol=symbols.optString(i,"").toUpperCase(Locale.US);
       if(symbol.matches("[A-Z0-9&-]{1,26}"))unique.add(symbol);
     }
@@ -117,33 +117,47 @@ final class InternetResearchEngine {
    * Reads the actual body of one published NSE iXBRL HTML record, never arbitrary
    * sites or PDF binaries. Text is truncated and used only as research evidence.
    */
-  private static String readOfficialHtmlPreview(String source){
-    if(source==null||!source.startsWith("https://nsearchives.nseindia.com/corporate/ixbrl/"))
-      return "";
+  private static JSONObject statusOnly(JSONObject report,String status){
+    try{report.put("status",status);}catch(Exception ignored){}
+    return report;
+  }
+  private static JSONObject readOfficialHtmlPreview(String source){
+    JSONObject report=new JSONObject();
+    if(!IxbrlFactExtractor.validNseDocument(source))
+      return statusOnly(report,"REJECTED_NON_NSE_IXBRL");
     HttpURLConnection connection=null;
     try{
       connection=(HttpURLConnection)new URL(source).openConnection();
       connection.setInstanceFollowRedirects(false);
       connection.setConnectTimeout(5500);connection.setReadTimeout(6500);
       connection.setRequestProperty("Accept","text/html");
-      if(connection.getResponseCode()!=200)return "NSE_DOCUMENT_HTTP_"+connection.getResponseCode();
+      int http=connection.getResponseCode();
+      if(http!=200)return statusOnly(report,"NSE_DOCUMENT_HTTP_"+http);
       String kind=connection.getContentType();
       if(kind==null||!kind.toLowerCase(Locale.US).contains("text/html"))
-        return "NSE_DOCUMENT_NOT_HTML";
+        return statusOnly(report,"NSE_DOCUMENT_NOT_HTML");
       try(InputStream in=connection.getInputStream();ByteArrayOutputStream b=new ByteArrayOutputStream()){
         byte[] buf=new byte[4096];int n;
         while((n=in.read(buf))!=-1){
-          if(b.size()+n>196608)break;
+          if(b.size()+n>230000)break;
           b.write(buf,0,n);
         }
-        String raw=b.toString("UTF-8")
-          .replaceAll("(?is)<(script|style)[^>]*>.*?</\\1>"," ");
-        String text=android.text.Html.fromHtml(raw,
+        String raw=b.toString("UTF-8");
+        JSONArray facts=IxbrlFactExtractor.extract(raw,source);
+        String clean=raw.replaceAll("(?is)<(script|style)[^>]*>.*?</\\1>"," ");
+        String text=android.text.Html.fromHtml(clean,
           android.text.Html.FROM_HTML_MODE_COMPACT).toString()
           .replaceAll("[\\s\\u00A0]+"," ").trim();
-        return text.substring(0,Math.min(1800,text.length()));
+        report.put("status","OFFICIAL_DOCUMENT_READ · RAW_FACTS_UNVALIDATED")
+          .put("preview",text.substring(0,Math.min(900,text.length())))
+          .put("rawXbrlFacts",facts)
+          .put("rawXbrlFactCount",facts.length())
+          .put("fetchedAtMs",System.currentTimeMillis())
+          .put("source",source)
+          .put("note","Numeric extraction only; reporting context, consolidated basis and public release time not yet independently verified. Zero Alpha-30 score inferred.");
+        return report;
       }
-    }catch(Exception e){return "NSE_DOCUMENT_UNAVAILABLE";}
+    }catch(Exception e){return statusOnly(report,"NSE_DOCUMENT_UNAVAILABLE");}
     finally{if(connection!=null)connection.disconnect();}
   }
 
@@ -183,19 +197,18 @@ final class InternetResearchEngine {
             .put("tier",evidenceTier(url))
             .put("discoveredMs",System.currentTimeMillis())
             .put("status","SOURCE DISCOVERED · UNSTRUCTURED / NO FACTOR SCORE");
-          if(primaryPagesRead<1 && url.startsWith(
-              "https://nsearchives.nseindia.com/corporate/ixbrl/")){
-            String content=readOfficialHtmlPreview(url);
-            if(!content.isEmpty()){
-              if(content.startsWith("NSE_DOCUMENT_")){
-                evidence.put("documentFetchStatus",content);
-              }else{
-                evidence.put("nseDocumentExtract",content)
-                  .put("nseDocumentFetchedMs",System.currentTimeMillis())
-                  .put("status","OFFICIAL DOCUMENT READ · NUMERIC FACTOR EXTRACTION PENDING");
-              }
-              primaryPagesRead++;
+          if(primaryPagesRead<1 && IxbrlFactExtractor.validNseDocument(url)){
+            JSONObject extracted=readOfficialHtmlPreview(url);
+            evidence.put("documentFetchStatus",extracted.optString("status","NO_DOCUMENT"));
+            JSONArray rawFacts=extracted.optJSONArray("rawXbrlFacts");
+            if(rawFacts!=null){
+              evidence.put("rawXbrlFactCandidates",rawFacts)
+                .put("rawXbrlFactCount",rawFacts.length())
+                .put("nseDocumentExtract",extracted.optString("preview",""))
+                .put("nseDocumentFetchedMs",extracted.optLong("fetchedAtMs",0))
+                .put("status","NSE IXBRL STRUCTURED RAW FACTS · NORMALIZED SCORE UNVERIFIED");
             }
+            primaryPagesRead++;
           }
           hits.put(evidence);
         }

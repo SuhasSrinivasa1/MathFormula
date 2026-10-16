@@ -438,6 +438,19 @@ public final class MainActivity extends AppCompatActivity {
     gap(researchWeb,8);
     researchWeb.addView(btn("Configure optional Internet search",this::editWebSearch),
       new LinearLayout.LayoutParams(-1,dp(48)));
+    gap(researchWeb,7);
+    researchWeb.addView(btn("Check official NSE research",()->{
+      worker.execute(()->{
+        new OfficialNseFeed(this).refresh();
+        new OfficialFinancialCollector(this).refresh();
+        handler.post(()->{
+          Toast.makeText(this,"Checked NSE sources · see research status",Toast.LENGTH_LONG).show();
+          render();
+        });
+      });
+    }),new LinearLayout.LayoutParams(-1,dp(48)));
+    gap(researchWeb,5);
+    researchWeb.addView(text("Official disclosures do not need another API key. Source refreshes respect the app's cooldown and Android battery limits.",11,MUTED,false));
     gap(page,2);
     LinearLayout privacy=card();
     privacy.addView(text("Privacy & diagnostics",18,INK,true));
