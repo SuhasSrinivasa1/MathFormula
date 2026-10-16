@@ -548,9 +548,7 @@ public final class HomeActivity extends AppCompatActivity {
     String scanner=serverConfigured()?
       remoteConnected?"SERVER LIVE":"SERVER DOWN":
       intradayRadar.fresh()?"RADAR FRESH":intradayRadar.running()?"SCANNING":"PHONE ONLY";
-    boolean firebaseReady=!com.google.firebase.FirebaseApp.getApps(this).isEmpty();
-    String alerts=!ResearchAlerts.permission(this)?"BLOCKED":firebaseReady?
-      "PUSH READY":"LOCAL ONLY";
+    String alerts=!ResearchAlerts.permission(this)?"BLOCKED":"ON PHONE";
     String[] labels={"MARKET","GROWW","SCANNER","ALERTS"};
     String[] values={market,growwState,scanner,alerts};
     for(int i=0;i<labels.length;i++){
@@ -886,7 +884,7 @@ public final class HomeActivity extends AppCompatActivity {
        12,MUTED,false));
     space(9);
     if(!serverConfigured()){
-      root.addView(text("PHONE-ONLY: broad NSE price radar refreshes on a best-effort 15-minute schedule. Only a small candidate list receives detailed monitoring; an independent server is still needed for uninterrupted scans and verified BUY alerts.",12,AMBER,true));
+      root.addView(text("PHONE-ONLY: broad NSE price radar refreshes on a best-effort 15-minute schedule. Only a small candidate list receives detailed monitoring; Vivo/Android restrictions can interrupt scans; a local notification cannot make operation guaranteed.",12,AMBER,true));
     }
     space(13);
     LinearLayout overview=card();
