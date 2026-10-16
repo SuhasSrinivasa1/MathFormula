@@ -9,7 +9,7 @@ public class IxbrlFactExtractorTest {
   private static final String SOURCE=
     "https://nsearchives.nseindia.com/corporate/ixbrl/results-2026.htm";
 
-  @Test public void preservesContextUnitsAndScaleWithoutCreditingFactor(){
+  @Test public void preservesContextUnitsAndScaleWithoutCreditingFactor() throws Exception{
     String html="<html><ix:nonFraction name='in-gaap:RevenueFromOperations' "+
       "contextRef='FY2026Q2Consolidated' unitRef='INR' scale='6' decimals='0'>"+
       "1,234.56</ix:nonFraction></html>";
@@ -22,7 +22,7 @@ public class IxbrlFactExtractorTest {
     assertTrue(row.getString("hint").contains("F01"));
     assertTrue(row.getString("status").contains("NOT A SCORE"));
   }
-  @Test public void negativeAmountsAndBrokenRowsNeverCreateScores(){
+  @Test public void negativeAmountsAndBrokenRowsNeverCreateScores() throws Exception{
     String html="<ix:nonFraction name=\"a:ProfitLoss\" contextRef=\"Current\" "+
       "unitRef=\"INR\" sign=\"-\" scale=\"3\">230</ix:nonFraction>"+
       "<ix:nonFraction name='a:RevenueFromOperations' contextRef='Current' "+
