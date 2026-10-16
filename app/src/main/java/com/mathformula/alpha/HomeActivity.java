@@ -876,6 +876,13 @@ public final class HomeActivity extends AppCompatActivity {
           12,INK,false));
       }
       spaceIn(card,5);
+      Alpha30EvidenceStore.EvidenceScore factors=evidenceStore.overnight(symbol,System.currentTimeMillis());
+      card.addView(text("Alpha-30 source coverage: "+
+        String.format(Locale.US,"%.1f%%",factors.overnight.coverage)+
+        " · "+factors.observed+"/29 overnight features · "+
+        (factors.overnight.coverage>=90?"review normalization":"insufficient coverage"),
+        11,MUTED,false));
+      spaceIn(card,5);
       card.addView(text("WATCH ONLY · Bulk quotes lack broker trade timestamp and live gates. "+
         "No Alpha-30 BUY verified.",11,AMBER,true));
     }
