@@ -187,8 +187,13 @@ final class InternetResearchEngine {
               "https://nsearchives.nseindia.com/corporate/ixbrl/")){
             String content=readOfficialHtmlPreview(url);
             if(!content.isEmpty()){
-              evidence.put("nseDocumentExtract",content);
-              evidence.put("nseDocumentFetchedMs",System.currentTimeMillis());
+              if(content.startsWith("NSE_DOCUMENT_")){
+                evidence.put("documentFetchStatus",content);
+              }else{
+                evidence.put("nseDocumentExtract",content)
+                  .put("nseDocumentFetchedMs",System.currentTimeMillis())
+                  .put("status","OFFICIAL DOCUMENT READ · NUMERIC FACTOR EXTRACTION PENDING");
+              }
               primaryPagesRead++;
             }
           }
