@@ -10,8 +10,8 @@ android {
         applicationId 'com.mathformula.alpha.stable'
         minSdk 26
         targetSdk 35
-        versionCode 310
-        versionName '3.1.0'
+        versionCode 320
+        versionName '3.2.0'
         manifestPlaceholders = [appLabel: 'MathFormula']
     }
     signingConfigs {
@@ -45,6 +45,5 @@ android {
 
 dependencies {
     implementation 'com.google.android.material:material:1.13.0'
-    implementation 'com.google.firebase:firebase-messaging:24.1.2'
     testImplementation 'junit:junit:4.13.2'
 }
