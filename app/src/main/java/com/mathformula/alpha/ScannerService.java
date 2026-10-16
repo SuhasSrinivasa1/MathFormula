@@ -306,9 +306,10 @@ public final class ScannerService extends Service {
   }
   @Override public void onTimeout(int startId,int fgsType){halt("Android foreground dataSync timeout");}
   @Override public void onDestroy(){
+    boolean unexpected=started;
     started=false;loop.removeCallbacks(pulse);work.shutdownNow();
     radarWorker.shutdownNow();store.setEnabled(false);
-    status("INTERRUPTED_OR_CLOSED");
+    if(unexpected)status("INTERRUPTED_UNEXPECTEDLY");
     super.onDestroy();
   }
   @Override public IBinder onBind(Intent i){return null;}
