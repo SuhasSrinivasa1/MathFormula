@@ -66,7 +66,7 @@ final class InternetResearchEngine {
     List<String> queries=new ArrayList<>();
     for(String symbol:unique){
       queries.add(symbol+" NSE quarterly results revenue EBITDA PAT filings site:nseindia.com OR site:bseindia.com");
-      queries.add(symbol+" NSE exchange announcement order backlog guidance investor presentation 2026");
+      queries.add(symbol+" NSE exchange announcement order backlog guidance investor presentation "+LocalDate.now(MarketSchedule.IST).getYear());
       queries.add(symbol+" NSE shareholding pledge governance annual report site:nseindia.com OR site:bseindia.com");
     }
     if(!unique.isEmpty())queries.add("India NSE RBI FII DII institutional flows sector indices macroeconomic policy latest");
@@ -113,6 +113,40 @@ final class InternetResearchEngine {
       }
     }finally{conn.disconnect();}
   }
+  /**
+   * Reads the actual body of one published NSE iXBRL HTML record, never arbitrary
+   * sites or PDF binaries. Text is truncated and used only as research evidence.
+   */
+  private static String readOfficialHtmlPreview(String source){
+    if(source==null||!source.startsWith("https://nsearchives.nseindia.com/corporate/ixbrl/"))
+      return "";
+    HttpURLConnection connection=null;
+    try{
+      connection=(HttpURLConnection)new URL(source).openConnection();
+      connection.setInstanceFollowRedirects(false);
+      connection.setConnectTimeout(5500);connection.setReadTimeout(6500);
+      connection.setRequestProperty("Accept","text/html");
+      if(connection.getResponseCode()!=200)return "NSE_DOCUMENT_HTTP_"+connection.getResponseCode();
+      String kind=connection.getContentType();
+      if(kind==null||!kind.toLowerCase(Locale.US).contains("text/html"))
+        return "NSE_DOCUMENT_NOT_HTML";
+      try(InputStream in=connection.getInputStream();ByteArrayOutputStream b=new ByteArrayOutputStream()){
+        byte[] buf=new byte[4096];int n;
+        while((n=in.read(buf))!=-1){
+          if(b.size()+n>196608)break;
+          b.write(buf,0,n);
+        }
+        String raw=b.toString("UTF-8")
+          .replaceAll("(?is)<(script|style)[^>]*>.*?</\\1>"," ");
+        String text=android.text.Html.fromHtml(raw,
+          android.text.Html.FROM_HTML_MODE_COMPACT).toString()
+          .replaceAll("[\\s\\u00A0]+"," ").trim();
+        return text.substring(0,Math.min(1800,text.length()));
+      }
+    }catch(Exception e){return "NSE_DOCUMENT_UNAVAILABLE";}
+    finally{if(connection!=null)connection.disconnect();}
+  }
+
   /** Step-limited, idempotent research. Android can terminate at any point. */
   void refresh(JSONArray priority){
     if(!due()||!BUSY.compareAndSet(false,true))return;
@@ -131,7 +165,7 @@ final class InternetResearchEngine {
       if(!day.equals(cacheDay))prefs.edit().putString("activeDay",day)
         .putInt("cursor",0).putString("rows","[]").apply();
       // 2 requests per execution: budgets, resume, and battery-friendly cadence.
-      int processed=0;
+      int processed=0, primaryPagesRead=0;
       for(int i=cursor;i<todo.size()&&processed<2;i++){
         String query=todo.get(i);
         JSONObject result=request(query,key);
@@ -144,11 +178,21 @@ final class InternetResearchEngine {
           String description=hit.optString("description","");
           if(title.length()>240)title=title.substring(0,240);
           if(description.length()>850)description=description.substring(0,850);
-          hits.put(new JSONObject().put("query",query).put("url",url)
+          JSONObject evidence=new JSONObject().put("query",query).put("url",url)
             .put("title",title).put("excerpt",description)
             .put("tier",evidenceTier(url))
             .put("discoveredMs",System.currentTimeMillis())
-            .put("status","SOURCE DISCOVERED · UNSTRUCTURED / NO FACTOR SCORE"));
+            .put("status","SOURCE DISCOVERED · UNSTRUCTURED / NO FACTOR SCORE");
+          if(primaryPagesRead<1 && url.startsWith(
+              "https://nsearchives.nseindia.com/corporate/ixbrl/")){
+            String content=readOfficialHtmlPreview(url);
+            if(!content.isEmpty()){
+              evidence.put("nseDocumentExtract",content);
+              evidence.put("nseDocumentFetchedMs",System.currentTimeMillis());
+              primaryPagesRead++;
+            }
+          }
+          hits.put(evidence);
         }
         processed++;
         prefs.edit().putString("rows",hits.toString())
