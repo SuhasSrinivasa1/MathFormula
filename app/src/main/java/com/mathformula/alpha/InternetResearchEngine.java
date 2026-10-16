@@ -117,10 +117,14 @@ final class InternetResearchEngine {
    * Reads the actual body of one published NSE iXBRL HTML record, never arbitrary
    * sites or PDF binaries. Text is truncated and used only as research evidence.
    */
+  private static JSONObject statusOnly(JSONObject report,String status){
+    try{report.put("status",status);}catch(Exception ignored){}
+    return report;
+  }
   private static JSONObject readOfficialHtmlPreview(String source){
     JSONObject report=new JSONObject();
     if(!IxbrlFactExtractor.validNseDocument(source))
-      return report.put("status","REJECTED_NON_NSE_IXBRL");
+      return statusOnly(report,"REJECTED_NON_NSE_IXBRL");
     HttpURLConnection connection=null;
     try{
       connection=(HttpURLConnection)new URL(source).openConnection();
@@ -128,10 +132,10 @@ final class InternetResearchEngine {
       connection.setConnectTimeout(5500);connection.setReadTimeout(6500);
       connection.setRequestProperty("Accept","text/html");
       int http=connection.getResponseCode();
-      if(http!=200)return report.put("status","NSE_DOCUMENT_HTTP_"+http);
+      if(http!=200)return statusOnly(report,"NSE_DOCUMENT_HTTP_"+http);
       String kind=connection.getContentType();
       if(kind==null||!kind.toLowerCase(Locale.US).contains("text/html"))
-        return report.put("status","NSE_DOCUMENT_NOT_HTML");
+        return statusOnly(report,"NSE_DOCUMENT_NOT_HTML");
       try(InputStream in=connection.getInputStream();ByteArrayOutputStream b=new ByteArrayOutputStream()){
         byte[] buf=new byte[4096];int n;
         while((n=in.read(buf))!=-1){
@@ -153,7 +157,7 @@ final class InternetResearchEngine {
           .put("note","Numeric extraction only; reporting context, consolidated basis and public release time not yet independently verified. Zero Alpha-30 score inferred.");
         return report;
       }
-    }catch(Exception e){return report.put("status","NSE_DOCUMENT_UNAVAILABLE");}
+    }catch(Exception e){return statusOnly(report,"NSE_DOCUMENT_UNAVAILABLE");}
     finally{if(connection!=null)connection.disconnect();}
   }
 
