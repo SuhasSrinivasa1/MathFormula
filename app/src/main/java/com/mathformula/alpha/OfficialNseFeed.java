@@ -63,7 +63,9 @@ final class OfficialNseFeed {
             return super.read();
           }
           @Override public int read(byte[] b,int off,int len)throws java.io.IOException{
-            int n=super.read(b,off,Math.min(len,2_000_001-count));
+            int allowance=2_000_001-count;
+            if(allowance<=0)throw new java.io.IOException("RSS_TOO_LARGE");
+            int n=super.read(b,off,Math.min(len,allowance));
             if(n>0)count+=n;
             if(count>2_000_000)throw new java.io.IOException("RSS_TOO_LARGE");
             return n;
