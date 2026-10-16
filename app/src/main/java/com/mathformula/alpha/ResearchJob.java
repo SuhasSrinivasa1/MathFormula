@@ -44,6 +44,7 @@ public final class ResearchJob extends JobService {
       try{
         // Public filing metadata collection is independent of broker tokens; on-device only.
         new OfficialNseFeed(this).refresh();
+        if(!cancelled)new OfficialFinancialCollector(this).refresh();
         // Optional search engine runs on-device; network queries contain only public
         // NSE ticker symbols and research terms, never Groww credentials.
         if(!cancelled){
