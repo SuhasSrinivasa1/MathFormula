@@ -378,11 +378,7 @@ public final class MainActivity extends AppCompatActivity {
     gap(alerts,5);
     alerts.addView(text("Research alerts use direct Groww market data. Phone monitoring is best-effort and can stop in the background. No unverified BUY signals.",12,MUTED,false));
     gap(alerts,6);
-    boolean firebaseReady=!com.google.firebase.FirebaseApp.getApps(this).isEmpty();
-    alerts.addView(text(firebaseReady?
-      "Firebase receiver initialized. Closed-phone push still requires sender authentication and device-token registration.":
-      "Cloud push NOT CONFIGURED. Local Android alerts require the app or a scheduled job to execute; Vivo sleep can delay them.",
-      12,firebaseReady?GREEN:AMBER,true));
+    alerts.addView(text("Notifications stay on THIS phone. Active foreground monitoring displays an ongoing system notification, plus local alerts for research events. Vivo and Android may delay jobs or stop the service.",12,AMBER,false));
     gap(alerts,7);
     alerts.addView(text("Last research alert evaluation: "+clock(ResearchAlerts.lastCheck(this)),11,MUTED,false));
     gap(alerts,9);
