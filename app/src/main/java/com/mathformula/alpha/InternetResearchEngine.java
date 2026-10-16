@@ -56,10 +56,10 @@ final class InternetResearchEngine {
     if(today().equals(prefs.getString("completedDay","")))return false;
     return now-prefs.getLong("lastAttempt",0L)>5*60_000L;
   }
-  /** Pure function: bounded 10 queries for 3 priority symbols and 1 market query. */
+  /** Up to six priority companies and one macro sweep, rate-limited across background jobs. */
   static List<String> queries(JSONArray symbols){
     LinkedHashSet<String> unique=new LinkedHashSet<>();
-    if(symbols!=null)for(int i=0;i<symbols.length()&&unique.size()<3;i++){
+    if(symbols!=null)for(int i=0;i<symbols.length()&&unique.size()<6;i++){
       String symbol=symbols.optString(i,"").toUpperCase(Locale.US);
       if(symbol.matches("[A-Z0-9&-]{1,26}"))unique.add(symbol);
     }
@@ -140,10 +140,10 @@ final class InternetResearchEngine {
         }
         String raw=b.toString("UTF-8");
         JSONArray facts=IxbrlFactExtractor.extract(raw,source);
-        String clean=raw.replaceAll("(?is)<(script|style)[^>]*>.*?</\\\\1>"," ");
+        String clean=raw.replaceAll("(?is)<(script|style)[^>]*>.*?</\\1>"," ");
         String text=android.text.Html.fromHtml(clean,
           android.text.Html.FROM_HTML_MODE_COMPACT).toString()
-          .replaceAll("[\\\\s\\\\u00A0]+"," ").trim();
+          .replaceAll("[\\s\\u00A0]+"," ").trim();
         report.put("status","OFFICIAL_DOCUMENT_READ · RAW_FACTS_UNVALIDATED")
           .put("preview",text.substring(0,Math.min(900,text.length())))
           .put("rawXbrlFacts",facts)
