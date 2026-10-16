@@ -35,7 +35,7 @@ final class SecureGrowwStore {
     return gen.generateKey();
   }
   synchronized void put(String name,String value) {
-    if(!name.matches("totp_token|totp_secret|access_token|server_viewer_token"))throw new IllegalArgumentException("Invalid secret name");
+    if(!name.matches("totp_token|totp_secret|access_token|server_viewer_token|web_search_api_key"))throw new IllegalArgumentException("Invalid secret name");
     try {
       Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");
       cipher.init(Cipher.ENCRYPT_MODE,key());

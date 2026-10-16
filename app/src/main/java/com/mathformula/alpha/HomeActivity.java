@@ -893,6 +893,49 @@ public final class HomeActivity extends AppCompatActivity {
     space(10);
   }
 
+  /** Research citations are discoverable links, never pre-filled numeric scores. */
+  private void webResearchPanel(){
+    InternetResearchEngine web=new InternetResearchEngine(this);
+    JSONObject snapshot=web.latest();
+    JSONArray results=snapshot.optJSONArray("results");
+    LinearLayout shell=card();
+    shell.addView(text("Internet research · evidence discovery",17,INK,true));
+    spaceIn(shell,5);
+    shell.addView(text(web.status()+" · last completed "+time(web.completedAt()),
+      11,MUTED,false));
+    spaceIn(shell,4);
+    shell.addView(text("Searches happen directly on this phone. A public NSE/BSE webpage or web snippet must still be parsed and verified before any of F01–T30 is scored.",11,AMBER,false));
+    if(results==null||results.length()==0){
+      spaceIn(shell,7);
+      shell.addView(text(web.configured()?
+        "No completed cited research yet · evening jobs resume when Android allows.":
+        "Official NSE disclosures are collected without a key. For wider Internet search, configure an optional API key in Settings.",
+        12,MUTED,false));
+      return;
+    }
+    int shown=0;
+    for(int pass=0;pass<2&&shown<5;pass++)for(int i=0;i<results.length()&&shown<5;i++){
+      JSONObject item=results.optJSONObject(i);if(item==null)continue;
+      String url=item.optString("url","");
+      String level=item.optString("tier","");
+      boolean official=level.startsWith("OFFICIAL_HOST");
+      if(official!=(pass==0)||!url.startsWith("https://"))continue;
+      shown++;
+      spaceIn(shell,8);
+      TextView button=text((official?"OFFICIAL DOMAIN · ":"SECONDARY · ")+
+        item.optString("title","Untitled"),12,BLUE,true);
+      button.setPadding(dp(8),dp(9),dp(8),dp(9));
+      button.setMinimumHeight(dp(48));button.setClickable(true);button.setFocusable(true);
+      button.setContentDescription("Open source: "+item.optString("title",""));
+      button.setOnClickListener(v->{
+        try{startActivity(new Intent(Intent.ACTION_VIEW,android.net.Uri.parse(url)));}
+        catch(Exception ignored){Toast.makeText(this,"Browser unavailable",Toast.LENGTH_SHORT).show();}
+      });
+      shell.addView(button);
+      shell.addView(text(item.optString("excerpt",""),11,MUTED,false));
+    }
+  }
+
   private void renderLive(){
     JSONObject scan=discovery.latest();
     JSONArray latestTop=scan.optJSONArray("top");
@@ -938,6 +981,7 @@ public final class HomeActivity extends AppCompatActivity {
     if(!serverConfigured()){
       summaryCard(scan,false);
       overnightEvidencePanel(scan);
+      if(!open())webResearchPanel();
     }
     radarPanel();
     if(live.length()==0&&provisional.length()==0 &&
