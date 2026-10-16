@@ -167,7 +167,11 @@ public final class HomeActivity extends AppCompatActivity {
     if(serverConfigured()||!open()||!secrets.configured())return;
     if(getSharedPreferences("mathformula_auto_monitor_v29",MODE_PRIVATE)
        .getBoolean("opted_out",false))return;
-    if(new WatchStore(this).enabled())return;
+    long beat=getSharedPreferences("mathformula_local_monitor_v32",MODE_PRIVATE)
+      .getLong("heartbeat_ms",0L);
+    if(new WatchStore(this).enabled()&&beat>0&&
+       System.currentTimeMillis()-beat<150_000L)return;
+    // Persisted enabled=true after Vivo kills the process does NOT mean it is running.
     try{
       android.content.Intent intent=new android.content.Intent(this,ScannerService.class)
         .setAction(ScannerService.START);
