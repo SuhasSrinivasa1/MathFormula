@@ -34,15 +34,19 @@ public final class ResearchJob extends JobService {
   @Override public boolean onStartJob(JobParameters params){
     cancelled=false;
     if(worker.isShutdown())worker=Executors.newSingleThreadExecutor();
-    if(!new SecureGrowwStore(this).configured())return false;
+    final boolean growwReady=new SecureGrowwStore(this).configured();
     boolean open=MarketSchedule.weekdayTradingTime(System.currentTimeMillis());
     java.time.LocalTime clock=java.time.Instant.now().atZone(MarketSchedule.IST).toLocalTime();
     // Full universe fetches run ONLY after the daily candle is finalized
     // and pause 90 minutes before NSE pre-open. During trading monitor 50.
-    if(!open&&!LocalDiscovery.overnightResearchWindow())return false;
+    // Official filing RSS collection is useful even outside the Groww research window.
     worker.execute(()->{
       try{
-        if(!cancelled){
+        // Public filing metadata collection is independent of broker tokens; on-device only.
+        new OfficialNseFeed(this).refresh();
+        if(!cancelled && growwReady &&
+           (MarketSchedule.weekdayTradingTime(System.currentTimeMillis())||
+            LocalDiscovery.overnightResearchWindow())){
           GrowwReadOnlyClient client=new GrowwReadOnlyClient(new SecureGrowwStore(this));
           LocalDiscovery discovery=new LocalDiscovery(this);
           // Android may delay this ~15m periodic job. Screen only when stale;

@@ -26,6 +26,7 @@ final class LocalDiscovery {
   private final Context app;
   private final SharedPreferences prefs;
   private final SharedPreferences historyCache;
+  private final Alpha30EvidenceStore evidenceStore;
   private JSONObject universeDiagnostics=new JSONObject();
   private final Map<String,String> seriesBySymbol=new HashMap<>();
   interface Progress { void update(String message); }
@@ -36,6 +37,7 @@ final class LocalDiscovery {
     app=c.getApplicationContext();
     prefs=app.getSharedPreferences(PREF,Context.MODE_PRIVATE);
     historyCache=app.getSharedPreferences("mathformula_eod_cache_v31",Context.MODE_PRIVATE);
+    evidenceStore=new Alpha30EvidenceStore(app);
     // Upgrade from the v2.5 55-symbol heuristic: preserve prior history but
     // require a fresh v2.6 full-universe pass as soon as the app is opened.
     // Android may kill the process mid-scan; never leave a permanent RUNNING headline.
@@ -123,7 +125,7 @@ final class LocalDiscovery {
         h.avgVolume20=row.getDouble("avgVolume20");h.avgValue20=row.getDouble("avgValue20");
         h.completedSessions=row.getInt("sessions");
         if(h.completedSessions>=61&&h.priorHigh20>0&&h.nextHigh20>0){
-          new Alpha30EvidenceStore(app).recordCompletedClv(symbol,h.sessionDate,h.high,h.low,h.close);
+          evidenceStore.recordCompletedClv(symbol,h.sessionDate,h.high,h.low,h.close);
           return h;
         }
       }
@@ -136,7 +138,7 @@ final class LocalDiscovery {
       .put("priorHigh20",h.priorHigh20).put("nextHigh20",h.nextHigh20).put("avgValue20",h.avgValue20)
       .put("avgVolume20",h.avgVolume20).put("sessions",h.completedSessions);
     historyCache.edit().putString(symbol,cache.toString()).apply();
-    new Alpha30EvidenceStore(app).recordCompletedClv(symbol,h.sessionDate,h.high,h.low,h.close);
+    evidenceStore.recordCompletedClv(symbol,h.sessionDate,h.high,h.low,h.close);
     return h;
   }
   static boolean overnightResearchWindow(){

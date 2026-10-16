@@ -37,10 +37,12 @@ public final class ScannerService extends Service {
   private static final long MAX_SESSION_MS=5L*60*60*1000+55L*60*1000; // 5h45m safety budget
   private final Handler loop=new Handler(Looper.getMainLooper());
   private final ExecutorService work=Executors.newSingleThreadExecutor();
+  private final ExecutorService radarWorker=Executors.newSingleThreadExecutor();
   private WatchStore store;
   private SecureGrowwStore vault;
   private GrowwReadOnlyClient client;
-  private boolean busy=false,started=false;
+  private volatile boolean busy=false,radarBusy=false,started=false;
+  private volatile int recentQuotes=0,recentUniverse=0;
   private String lastReminderDay="";
   private long sessionStart;
   private final Runnable pulse=new Runnable() {
@@ -66,7 +68,9 @@ public final class ScannerService extends Service {
             "Open MathFormula and tap Start background to renew the Android monitoring session.");
         }
       }
+      status("FOREGROUND_ACTIVE");
       if(!busy)fetchCycle();
+      startRadarWhenDue();
       // Monitored-symbol quotes every minute; completed-candle checks every five minutes.
       long now=System.currentTimeMillis(), interval=60000L;
       long delay=interval-(now%interval)+3000L;
@@ -98,10 +102,12 @@ public final class ScannerService extends Service {
     Intent open=new Intent(this,MainActivity.class);
     PendingIntent pi=PendingIntent.getActivity(this,0,open,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
     return new Notification.Builder(this,CHANNEL)
-      .setContentTitle("MathFormula · monitoring active")
+      .setContentTitle("MathFormula · local NSE monitoring")
       .setContentText(caption)
       .setSmallIcon(android.R.drawable.ic_menu_view)
-      .setContentIntent(pi).setOngoing(true).setOnlyAlertOnce(true).build();
+      .setContentIntent(pi).setOngoing(true).setOnlyAlertOnce(true)
+      .setCategory(Notification.CATEGORY_SERVICE)
+      .setShowWhen(true).build();
   }
   @Override public int onStartCommand(Intent intent,int flags,int startId){
     String action=intent==null?"":intent.getAction();
@@ -111,7 +117,7 @@ public final class ScannerService extends Service {
       sessionStart=System.currentTimeMillis();
       store.audit("MONITOR","SESSION","ACTIVE","USER_RENEWED",
         "User reopened MathFormula to prioritize closing session; Android budget still applies",0);
-      return START_NOT_STICKY;
+      return START_STICKY;
     }
     if(!vault.configured()) {
       store.setEnabled(false);store.recordScan(false,"Groww credentials not configured",0);
@@ -131,8 +137,9 @@ public final class ScannerService extends Service {
       store.setEnabled(false);stopSelf();return START_NOT_STICKY;
     }
     started=true;sessionStart=System.currentTimeMillis();store.setEnabled(true);
+    status("FOREGROUND_ACTIVE");ResearchJob.schedule(this);
     store.audit("MONITOR","SESSION","STOPPED","ACTIVE","User-started read-only session",0);
-    loop.post(pulse);return START_NOT_STICKY;
+    loop.post(pulse);return START_STICKY;
   }
   /** Follow the overnight watch into the NEXT trading day, not only the next 25 minutes.
    *  The fallback remains research-only: all Alpha-30 BUY gates are still independently required.
@@ -165,8 +172,34 @@ public final class ScannerService extends Service {
     }
     return symbols;
   }
+  /** Heartbeat proves the worker is running; notification alone proves only Android service presence. */
+  private void status(String state){
+    getSharedPreferences("mathformula_local_monitor_v32",MODE_PRIVATE).edit()
+      .putLong("heartbeat_ms",System.currentTimeMillis())
+      .putString("monitoring_state",state).apply();
+  }
+  /** Dynamically discover fresh movers even when the Market activity has been closed. */
+  private void startRadarWhenDue(){
+    final IntradayRadar radar=new IntradayRadar(this);
+    if(radarBusy||!radar.due())return;
+    radarBusy=true;
+    radarWorker.execute(()->{
+      try {
+        radar.scan(client,new LocalDiscovery(this),update->{});
+        recentUniverse=radar.latest().optInt("scannedUniverse",0);
+        ResearchAlerts.evaluateRadar(this,client,radar);
+      }catch(SecurityException access){
+        store.audit("RADAR","GROWW","ACTIVE","AUTH_REQUIRED",
+          "Phone-only market scan lost Groww account authorization",0);
+      }catch(Exception failure){
+        store.audit("RADAR","UNIVERSE","ACTIVE","SCAN_FAILURE",
+          failure.getClass().getSimpleName(),0);
+      }finally{radarBusy=false;}
+    });
+  }
   private void fetchCycle(){
     busy=true;work.execute(()->{
+      try{
       List<String> symbols=watchlist();
       boolean fullFive=java.time.ZonedDateTime.now(IST).getMinute()%5==0;int success=0;String lastFailure="";
       long now=System.currentTimeMillis();
@@ -224,13 +257,22 @@ public final class ScannerService extends Service {
         reminder("Pre-close watch · "+label,"Updated watched symbols. Check MathFormula; not a BUY signal.");
       }
       store.recordScan(okay,okay?"":lastFailure,success);
+      recentQuotes=success;
+      status(okay?"FOREGROUND_ACTIVE":"FOREGROUND_DEGRADED");
       Intent changed=new Intent(WatchStore.ACTION);changed.setPackage(getPackageName());
       sendBroadcast(changed);
       if(started){
         NotificationManager mgr=getSystemService(NotificationManager.class);
-        if(mgr!=null)mgr.notify(70,notification("Quotes "+success+"/"+symbols.size()+" · "+(fullFive?"5m candles":"1m refresh")+" · "+LocalTime.now(IST).toString().substring(0,5)+" IST"));
+        if(mgr!=null)mgr.notify(70,notification("Quotes "+success+"/"+symbols.size()+
+          " · NSE radar "+(radarBusy?"scanning":recentUniverse>0?recentUniverse+" stocks":"pending")+
+          " · "+LocalTime.now(IST).toString().substring(0,5)+" IST"));
       }
-      busy=false;
+      }catch(Exception fatal){
+        store.audit("ERROR","SESSION","RUNNING","SCAN_WORKER_EXCEPTION",
+          fatal.getClass().getSimpleName(),0);
+        store.recordScan(false,"Monitor cycle failed: "+fatal.getClass().getSimpleName(),0);
+        status("SCAN_ERROR");
+      }finally{busy=false;}
     });
   }
   private void reminder(String title,String body){
@@ -262,6 +304,7 @@ public final class ScannerService extends Service {
   private void halt(String reason){
     if(started)reminder("Monitoring stopped · coverage gap",reason);
     started=false;loop.removeCallbacks(pulse);store.setEnabled(false);
+    status("STOPPED: "+reason);
     store.audit("MONITOR","SESSION","ACTIVE","STOPPED",reason,0);
     store.recordScan(false,reason,0);
     Intent changed=new Intent(WatchStore.ACTION);changed.setPackage(getPackageName());sendBroadcast(changed);
@@ -269,7 +312,10 @@ public final class ScannerService extends Service {
   }
   @Override public void onTimeout(int startId,int fgsType){halt("Android foreground dataSync timeout");}
   @Override public void onDestroy(){
-    started=false;loop.removeCallbacks(pulse);work.shutdownNow();store.setEnabled(false);
+    boolean unexpected=started;
+    started=false;loop.removeCallbacks(pulse);work.shutdownNow();
+    radarWorker.shutdownNow();store.setEnabled(false);
+    if(unexpected)status("INTERRUPTED_UNEXPECTEDLY");
     super.onDestroy();
   }
   @Override public IBinder onBind(Intent i){return null;}
