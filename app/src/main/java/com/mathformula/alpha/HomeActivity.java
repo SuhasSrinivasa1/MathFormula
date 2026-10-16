@@ -480,6 +480,12 @@ public final class HomeActivity extends AppCompatActivity {
       c.addView(text("Whole NSE universe: once per completed EOD, only 16:30–07:30 IST; resumable overnight.",11,MUTED,false));
       c.addView(text("Market hours: best-effort 15-minute NSE-wide batch radar plus up to 50 priority quotes and 5 detailed candidates.",11,MUTED,false));
       c.addView(text("Groww historical budget: max 3/min. Existing 429 cooldown: 30 min; other apps share account limits.",11,AMBER,false));
+      spaceIn(c,5);
+      OfficialNseFeed official=new OfficialNseFeed(this);
+      c.addView(text("Official NSE corporate RSS: "+official.status()+" · "+official.count()+
+        " announcements · last downloaded "+time(official.completed())+
+        " · research metadata only (no fabricated C11-C17 scores).",
+        11,MUTED,false));
       c.addView(text(nextScanTime()==0?"Next full-universe scan: after 16:30 IST or already complete":
         "Next overnight research eligibility: "+time(nextScanTime()),11,BLUE,true));
     }
@@ -545,9 +551,11 @@ public final class HomeActivity extends AppCompatActivity {
     String market=open()?"OPEN":"CLOSED";
     String growwState=!secrets.configured()?"SETUP":new WatchStore(this).lastPollOk()?
       "DATA SEEN":"SAVED";
-    String scanner=serverConfigured()?
-      remoteConnected?"SERVER LIVE":"SERVER DOWN":
-      intradayRadar.fresh()?"RADAR FRESH":intradayRadar.running()?"SCANNING":"PHONE ONLY";
+    long beat=getSharedPreferences("mathformula_local_monitor_v32",MODE_PRIVATE)
+      .getLong("heartbeat_ms",0);
+    boolean heartbeatFresh=beat>0&&System.currentTimeMillis()-beat<150_000L;
+    String scanner=serverConfigured()?remoteConnected?"SERVER":"SERVER DOWN":
+      heartbeatFresh?"ACTIVE":intradayRadar.fresh()?"RADAR FRESH":"PAUSED";
     String alerts=!ResearchAlerts.permission(this)?"BLOCKED":"ON PHONE";
     String[] labels={"MARKET","GROWW","SCANNER","ALERTS"};
     String[] values={market,growwState,scanner,alerts};
@@ -561,6 +569,14 @@ public final class HomeActivity extends AppCompatActivity {
       lp.setMargins(dp(2),0,dp(2),0);grid.addView(c,lp);
     }
     root.addView(grid);
+    space(8);
+    long latestBeat=getSharedPreferences("mathformula_local_monitor_v32",MODE_PRIVATE)
+      .getLong("heartbeat_ms",0L);
+    String localState=getSharedPreferences("mathformula_local_monitor_v32",MODE_PRIVATE)
+      .getString("monitoring_state","NOT STARTED");
+    root.addView(text("Phone monitor: "+localState+" · last heartbeat "+
+      time(latestBeat)+" · Android/Vivo may stop background execution.",
+      11,latestBeat>0&&System.currentTimeMillis()-latestBeat<150_000L?GREEN:AMBER,false));
     space(14);
   }
   private void summaryCard(JSONObject scan,boolean closed){
@@ -884,7 +900,7 @@ public final class HomeActivity extends AppCompatActivity {
        12,MUTED,false));
     space(9);
     if(!serverConfigured()){
-      root.addView(text("PHONE-ONLY: broad NSE price radar refreshes on a best-effort 15-minute schedule. Only a small candidate list receives detailed monitoring; Vivo/Android restrictions can interrupt scans; a local notification cannot make operation guaranteed.",12,AMBER,true));
+      root.addView(text("PHONE-ONLY: local foreground scanning and local notifications. NSE-wide price radar roughly every 15 minutes while the process runs; Android/Vivo can delay or terminate the service. All 30 factors require independent evidence.",12,AMBER,true));
     }
     space(13);
     LinearLayout overview=card();
