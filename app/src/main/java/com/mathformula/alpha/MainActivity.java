@@ -422,6 +422,23 @@ public final class MainActivity extends AppCompatActivity {
     preference.addView(btn("View all 30 model factors",this::showFactors),
       new LinearLayout.LayoutParams(-1,dp(48)));
     gap(page,2);
+    LinearLayout researchWeb=card();
+    researchWeb.addView(text("Internet research engine",18,INK,true));
+    gap(researchWeb,6);
+    InternetResearchEngine webResearch=new InternetResearchEngine(this);
+    researchWeb.addView(text(webResearch.configured()?
+      "✓ Optional web-search provider configured · automatic evening research enabled":
+      "○ Public NSE disclosures collected automatically · optional broader web-search access not configured",
+      12,webResearch.configured()?GREEN:AMBER,true));
+    gap(researchWeb,4);
+    researchWeb.addView(text("Latest web research: "+webResearch.status()+
+      " · "+clock(webResearch.completedAt()),11,MUTED,false));
+    gap(researchWeb,7);
+    researchWeb.addView(text("Uses public NSE tickers to discover official filings, results and catalysts. Search results are NOT financial facts or Alpha-30 factor scores. A user-owned search API key may incur provider costs.",11,MUTED,false));
+    gap(researchWeb,8);
+    researchWeb.addView(btn("Configure optional Internet search",this::editWebSearch),
+      new LinearLayout.LayoutParams(-1,dp(48)));
+    gap(page,2);
     LinearLayout privacy=card();
     privacy.addView(text("Privacy & diagnostics",18,INK,true));
     gap(privacy,7);
@@ -514,6 +531,37 @@ public final class MainActivity extends AppCompatActivity {
     startService(intent);watchStore.setEnabled(false);
     getSharedPreferences("mathformula_auto_monitor_v29",MODE_PRIVATE).edit().putBoolean("opted_out",true).apply();
     status="Stop requested; monitoring session will close";render();
+  }
+  /** No search-service key is shipped with the APK or added to exported diagnostics. */
+  private void editWebSearch(){
+    EditText input=passwordField("Enter your Brave Search API token");
+    String saved=vault.get("web_search_api_key");
+    LinearLayout pane=new LinearLayout(this);pane.setOrientation(LinearLayout.VERTICAL);
+    pane.setPadding(dp(20),dp(8),dp(20),dp(5));
+    pane.addView(text("Optional web discovery, on this phone. Only public NSE tickers and research queries are sent to the search provider. This provider may charge by request; your Groww credentials are never sent there.",12,MUTED,false));
+    gap(pane,12);
+    pane.addView(credentialBox(input,"Brave Search API key"),new LinearLayout.LayoutParams(-1,-2));
+    new AlertDialog.Builder(this).setTitle("Internet research · optional")
+      .setView(pane).setPositiveButton("Save",(d,w)->{
+        String key=input.getText().toString().trim();
+        if(key.isEmpty()){
+          Toast.makeText(this,saved.isEmpty()?"No key configured":"Existing encrypted key retained",Toast.LENGTH_LONG).show();
+          return;
+        }
+        if(key.length()<16||key.length()>512){
+          Toast.makeText(this,"Invalid search API key length",Toast.LENGTH_LONG).show();return;
+        }
+        try{
+          vault.put("web_search_api_key",key);
+          ResearchJob.schedule(this);
+          Toast.makeText(this,"Search key encrypted. Nightly public-source research enabled.",Toast.LENGTH_LONG).show();
+        }catch(Exception ex){Toast.makeText(this,"Unable to save API key securely",Toast.LENGTH_LONG).show();}
+        render();
+      }).setNeutralButton("Remove key",(d,w)->{
+        vault.put("web_search_api_key","");
+        getSharedPreferences("mathformula_web_research_v33",MODE_PRIVATE).edit().clear().apply();
+        render();
+      }).setNegativeButton("Cancel",null).show();
   }
   private void showAudit(){
     new AlertDialog.Builder(this).setTitle("Alpha-30 · Local Audit")
@@ -779,7 +827,9 @@ public final class MainActivity extends AppCompatActivity {
       if(i==10)b.append("\nCATALYSTS (23)\n");
       if(i==17)b.append("\nMACRO (19)\n");
       if(i==25)b.append("\nTRADING (31)\n");
-      b.append(String.format(Locale.US,"%02d · %s  (%d)\n",i+1,Alpha30Engine.FACTORS[i],Alpha30Engine.WEIGHTS[i]));
+      b.append(String.format(Locale.US,"%02d · %s  (%d)\n    Source: %s\n",
+        i+1,Alpha30Engine.FACTORS[i],Alpha30Engine.WEIGHTS[i],
+        FactorSourceCatalog.sourceFor(i+1)));
     }
     new AlertDialog.Builder(this).setTitle("Alpha-30 frozen formula").setMessage(b.toString())
       .setPositiveButton("Close",null).show();
