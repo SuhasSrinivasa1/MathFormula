@@ -199,6 +199,7 @@ public final class ScannerService extends Service {
   }
   private void fetchCycle(){
     busy=true;work.execute(()->{
+      try{
       List<String> symbols=watchlist();
       boolean fullFive=java.time.ZonedDateTime.now(IST).getMinute()%5==0;int success=0;String lastFailure="";
       long now=System.currentTimeMillis();
@@ -266,7 +267,12 @@ public final class ScannerService extends Service {
           " · NSE radar "+(radarBusy?"scanning":recentUniverse>0?recentUniverse+" stocks":"pending")+
           " · "+LocalTime.now(IST).toString().substring(0,5)+" IST"));
       }
-      busy=false;
+      }catch(Exception fatal){
+        store.audit("ERROR","SESSION","RUNNING","SCAN_WORKER_EXCEPTION",
+          fatal.getClass().getSimpleName(),0);
+        store.recordScan(false,"Monitor cycle failed: "+fatal.getClass().getSimpleName(),0);
+        status("SCAN_ERROR");
+      }finally{busy=false;}
     });
   }
   private void reminder(String title,String body){
