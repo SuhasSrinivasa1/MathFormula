@@ -624,9 +624,11 @@ public final class HomeActivity extends AppCompatActivity {
       .getLong("heartbeat_ms",0L);
     String localState=getSharedPreferences("mathformula_local_monitor_v32",MODE_PRIVATE)
       .getString("monitoring_state","NOT STARTED");
-    root.addView(text("Phone monitor: "+localState+" · last heartbeat "+
-      time(latestBeat)+" · Android/Vivo may stop background execution.",
-      11,latestBeat>0&&System.currentTimeMillis()-latestBeat<150_000L?GREEN:AMBER,false));
+    boolean exchangeOpen=open();
+    root.addView(text("Phone monitor: "+(exchangeOpen?localState:"MARKET CLOSED · next-session checks scheduled")+
+      " · heartbeat "+(exchangeOpen?time(latestBeat):"not required outside NSE hours")+
+      ". Android/Vivo may defer jobs. A persistent foreground notification appears during active market monitoring.",
+      11,!exchangeOpen?MUTED:latestBeat>0&&System.currentTimeMillis()-latestBeat<150_000L?GREEN:AMBER,false));
     space(14);
   }
   private void summaryCard(JSONObject scan,boolean closed){
@@ -847,15 +849,7 @@ public final class HomeActivity extends AppCompatActivity {
       }
     }
     spaceIn(c,10);
-    MaterialButton importButton=new MaterialButton(this);
-    importButton.setAllCaps(false);
-    importButton.setText("Import sourced Alpha-30 factor CSV");
-    importButton.setTextColor(Color.WHITE);importButton.setBackgroundTintList(ColorStateList.valueOf(BLUE));importButton.setCornerRadius(dp(14));
-    importButton.setOnClickListener(v->importEvidence());
-    c.addView(importButton,new LinearLayout.LayoutParams(-1,dp(48)));
-    spaceIn(c,5);
-    c.addView(text("CSV: symbol,factor,value,observed_at_utc,source · factor 1–30 · value 0–1 · timestamp in UTC/offset · HTTPS URL.",
-      11,MUTED,false));
+    c.addView(text("AUTOMATIC RESEARCH: Groww supplies NSE market data. Official exchange and company publications provide other evidence where adapters exist. Missing Alpha-30/40 factors remain unavailable; no routine CSV upload is required.",11,AMBER,false));
     if(!evidenceImportNote.isEmpty()){
       spaceIn(c,4);c.addView(text(evidenceImportNote,11,AMBER,false));
     }
@@ -1106,7 +1100,7 @@ public final class HomeActivity extends AppCompatActivity {
       11,MUTED,false));
   }
   private JSONArray capWithFactorAudit(JSONArray pool){
-    JSONArray enriched=new AmfiClassification(this).enrich(pool);
+    JSONArray enriched=new GrowwCapAuto(this).enrich(new AmfiClassification(this).enrich(pool));
     JSONArray answer=new JSONArray();
     int small=0,mid=0,large=0;
     DualFactorEvidence evidence=new DualFactorEvidence(this);
@@ -1158,7 +1152,7 @@ public final class HomeActivity extends AppCompatActivity {
       radar.optInt("scannedUniverse",0)+" instruments.",12,MUTED,false));
     JSONArray prelim=radar.optJSONArray("top");
     MajorReleaseDashboard.capGrid(this,root,capWithFactorAudit(prelim),"Live 3 PM research feed");
-    root.addView(text("An AMFI CSV import is needed to segregate candidates authoritatively. Incomplete scores remain N/A; a missing 3 PM observation cannot be recreated from EOD data.",11,AMBER,false));
+    root.addView(text("Cap buckets are auto-estimated from Groww quote market caps when available; they are not official AMFI six-month categories. Missing scores remain N/A and a missed 3 PM record cannot be reconstructed.",11,AMBER,false));
   }
   private void renderClosed(){
     JSONArray records=serverConfigured()?(remoteConnected?remoteClosed:new JSONArray()):ledger.closed();
