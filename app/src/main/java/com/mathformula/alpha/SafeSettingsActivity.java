@@ -107,7 +107,7 @@ public final class SafeSettingsActivity extends Activity {
   private void draw(){
     if(!initialized||content==null)return;
     content.removeAllViews();
-    heading("MathFormula 4.1.0");
+    heading("MathFormula 4.2.0");
     content.addView(label("Settings · read-only live market research",13,MUTED,false));
     content.addView(label(message,12,AMBER,false));
     rule();
@@ -137,26 +137,26 @@ public final class SafeSettingsActivity extends Activity {
     content.addView(webSearchField);
     addButton("Save optional search key",this::saveWebSearch);
     rule();
-    heading("AMFI market-cap classification");
-    AmfiClassification registry=new AmfiClassification(this);
-    content.addView(label("Imported classifications: "+registry.count()+
-      " · provenance: "+registry.origin(),12,MUTED,false));
-    content.addView(label("Download the official AMFI Jan–June 2026 categorisation from AMFI, convert its Excel sheet to CSV with symbol,category (or symbol,rank), then import. User-supplied data is labelled unauthenticated and is not an independent verification.",11,AMBER,false));
-    addButton("Open official AMFI source",()->{
-      Intent i=new Intent(Intent.ACTION_VIEW,
-        Uri.parse("https://www.amfiindia.com/otherdata/categorisation-of-stocks"));
-      startActivity(i);
-    });
-    addButton("Import AMFI classification CSV",()->{
-      Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);
-      i.addCategory(Intent.CATEGORY_OPENABLE);
-      i.setType("*/*");
-      startActivityForResult(i,REQUEST_AMFI);
-    });
+    heading("Automatic market-cap grouping");
+    GrowwCapAuto caps=new GrowwCapAuto(this);
+    content.addView(label("Paid Groww market-cap quotes cached: "+caps.savedCount()+
+       " · updated automatically as stocks are researched.",12,NAVY,true));
+    content.addView(label("Small/mid/large groups are estimated from Groww's current market capitalization using reference thresholds. They are NOT official AMFI six-month average classifications. No CSV or Excel upload needed.",11,AMBER,false));
     rule();
     heading("Diagnostics and notifications");
     content.addView(label(ResearchAlerts.permission(this)?
        "Android notification permission: enabled":"Android notification permission: disabled",12,MUTED,false));
+    addButton("Vivo / Android battery settings",()->{
+      try{
+        Intent intent=new Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+        startActivity(intent);
+      }catch(Exception error){
+        Intent fallback=new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+        fallback.setData(Uri.parse("package:"+getPackageName()));
+        startActivity(fallback);
+      }
+    });
+    content.addView(label("During NSE hours MathFormula starts a visible foreground monitoring notification where Android permits it. On market-closed days 'not started' is expected. Battery restrictions and Android 15 limits cannot be bypassed by repeated notifications.",11,MUTED,false));
     addButton("Open Android app settings",()->{
       Intent intent=new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
       intent.setData(Uri.parse("package:"+getPackageName()));
