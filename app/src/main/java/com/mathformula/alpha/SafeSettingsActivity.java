@@ -36,6 +36,7 @@ public final class SafeSettingsActivity extends Activity {
   private static final int MUTED=Color.rgb(99,112,127);
   private static final int AMBER=Color.rgb(154,95,20);
   private static final int REQUEST_EXPORT=4811;
+  private static final int REQUEST_AMFI=4812;
   private final Handler main=new Handler(Looper.getMainLooper());
   private final ExecutorService worker=Executors.newSingleThreadExecutor();
   private LinearLayout content;
@@ -106,7 +107,7 @@ public final class SafeSettingsActivity extends Activity {
   private void draw(){
     if(!initialized||content==null)return;
     content.removeAllViews();
-    heading("MathFormula 4.0.3");
+    heading("MathFormula 4.1.0");
     content.addView(label("Settings · read-only live market research",13,MUTED,false));
     content.addView(label(message,12,AMBER,false));
     rule();
@@ -135,6 +136,23 @@ public final class SafeSettingsActivity extends Activity {
     webSearchField=field("Optional Brave Search API key · leave blank to keep",true);
     content.addView(webSearchField);
     addButton("Save optional search key",this::saveWebSearch);
+    rule();
+    heading("AMFI market-cap classification");
+    AmfiClassification registry=new AmfiClassification(this);
+    content.addView(label("Imported classifications: "+registry.count()+
+      " · provenance: "+registry.origin(),12,MUTED,false));
+    content.addView(label("Download the official AMFI Jan–June 2026 categorisation from AMFI, convert its Excel sheet to CSV with symbol,category (or symbol,rank), then import. User-supplied data is labelled unauthenticated and is not an independent verification.",11,AMBER,false));
+    addButton("Open official AMFI source",()->{
+      Intent i=new Intent(Intent.ACTION_VIEW,
+        Uri.parse("https://www.amfiindia.com/otherdata/categorisation-of-stocks"));
+      startActivity(i);
+    });
+    addButton("Import AMFI classification CSV",()->{
+      Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+      i.addCategory(Intent.CATEGORY_OPENABLE);
+      i.setType("text/*");
+      startActivityForResult(i,REQUEST_AMFI);
+    });
     rule();
     heading("Diagnostics and notifications");
     content.addView(label(ResearchAlerts.permission(this)?
@@ -243,7 +261,23 @@ public final class SafeSettingsActivity extends Activity {
   }
   @Override protected void onActivityResult(int request,int result,Intent intent){
     super.onActivityResult(request,result,intent);
-    if(request!=REQUEST_EXPORT||result!=RESULT_OK||intent==null||intent.getData()==null)return;
+    if(result!=RESULT_OK||intent==null||intent.getData()==null)return;
+    if(request==REQUEST_AMFI){
+      Uri selected=intent.getData();
+      worker.execute(()->{
+        String resultText;
+        try(java.io.InputStream input=getContentResolver().openInputStream(selected)){
+          int n=new AmfiClassification(this).importCsv(input,"AMFI user-imported CSV");
+          resultText="Imported "+n+" classifications · source not independently authenticated";
+        }catch(Exception e){resultText="AMFI CSV import failed: "+e.getMessage();}
+        final String note=resultText;
+        main.post(()->{
+          if(isFinishing()||isDestroyed())return;
+          message=note;Toast.makeText(this,note,Toast.LENGTH_LONG).show();draw();
+        });
+      });return;
+    }
+    if(request!=REQUEST_EXPORT)return;
     Uri uri=intent.getData();
     worker.execute(()->{
       String issue=null;
