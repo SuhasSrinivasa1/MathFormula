@@ -37,6 +37,7 @@ final class GrowwReadOnlyClient {
   static final class Market {
     String symbol; double price=Double.NaN,change=Double.NaN,vwap=Double.NaN,bid=Double.NaN,ask=Double.NaN;
     double high=Double.NaN,low=Double.NaN,dayVolume=Double.NaN,spreadBps=Double.NaN;
+    double marketCap=Double.NaN;
     long lastTradeMs;int fiveCount, fifteenCount;
     double breakoutLevel=Double.NaN; String referenceAsOf="",referenceSource="";boolean two5m=false;
     double lastFiveClose=Double.NaN, lastFifteenClose=Double.NaN;
@@ -261,6 +262,7 @@ final class GrowwReadOnlyClient {
     m.high=p.optDouble("high_trade_range",Double.NaN);
     m.low=p.optDouble("low_trade_range",Double.NaN);
     m.dayVolume=p.optDouble("volume",Double.NaN);
+    m.marketCap=p.optDouble("market_cap",Double.NaN);
     m.lastTradeMs=p.optLong("last_trade_time",0);
     if(m.lastTradeMs>0&&m.lastTradeMs<100000000000L)m.lastTradeMs*=1000;
     if(Double.isFinite(m.bid)&&Double.isFinite(m.ask)&&m.bid>0&&m.ask>=m.bid)
