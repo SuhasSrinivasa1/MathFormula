@@ -20,7 +20,7 @@ import java.util.Locale;
 /**
  * Major release v4.0: real-data-only NSE research views.
  * No fake fills, no paper trades, no order endpoints, and no synthetic scores.
- * The always-on scanner must AUTHOR the 15:00 freeze: a phone cannot
+ * The Groww-powered phone scanner must AUTHOR the 15:00 freeze: it cannot
  * reconstruct a missed 15:00 market state after the fact.
  */
 final class MajorReleaseDashboard {
@@ -89,7 +89,7 @@ final class MajorReleaseDashboard {
     String today=z.toLocalDate().toString();
     boolean afterFreeze=!z.toLocalTime().isBefore(LocalTime.of(15,0));
     SharedPreferences prefs=a.getSharedPreferences(PREF,Context.MODE_PRIVATE);
-    append(a,root,"Next-Day Picks · 15:00 IST","Live candidate research before 15:00; once frozen, the set is immutable. A complete verified backend snapshot is required.");
+    append(a,root,"Next-Day Picks · 15:00 IST","Live candidate research before 15:00; once frozen, the set is immutable. The 15:00 Groww snapshot must be captured in time and meet all verification rules; no backfill.");
     String storedDate=prefs.getString("freeze_date","");
     JSONArray sealed=new JSONArray();
     if(today.equals(storedDate)){
@@ -122,7 +122,7 @@ final class MajorReleaseDashboard {
         root.addView(line(a,"SEALED · "+today+" 15:00 IST · Snapshot stored locally",13,BLUE,true));
         capGrid(a,root,sealed,"Frozen next-session selection");
       }else{
-        root.addView(line(a,"FREEZE UNAVAILABLE · No fully verified 15:00 NSE-wide snapshot",13,AMBER,true));
+        root.addView(line(a,"FREEZE UNAVAILABLE · No complete verified 15:00 Groww NSE-wide snapshot",13,AMBER,true));
         capGrid(a,root,new JSONArray(),"Unfilled frozen positions");
       }
     }else{
@@ -164,6 +164,6 @@ final class MajorReleaseDashboard {
       Toast.makeText(a,"Remediation review recorded · settings unchanged pending verification",Toast.LENGTH_LONG).show();
     });
     root.addView(remediate);
-    root.addView(line(a,"No live weights are automatically rewritten from an unverified result. Remediation requires a deployed backend, evidence, tested changes and rollback.",11,AMBER,false));
+    root.addView(line(a,"No live weights are rewritten after one loss. Automated remediation requires verified evidence, out-of-sample validation, versioned settings and rollback, none of which are enabled yet.",11,AMBER,false));
   }
 }
