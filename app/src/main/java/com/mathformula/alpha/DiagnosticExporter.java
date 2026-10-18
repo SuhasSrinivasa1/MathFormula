@@ -123,6 +123,14 @@ final class DiagnosticExporter {
           .put("lastResearchAlertResult",ResearchAlerts.lastState(ctx))
           .put("notificationsEnabled",ResearchAlerts.permission(ctx))
           .put("warning","Groww rate limits are shared with other apps; account usage cannot be verified here.");
+        JSONObject connection=new JSONObject()
+          .put("savedCredentialsPresent",new SecureGrowwStore(ctx).configured())
+          .put("lastAuthenticatedMarketDataAtMs",GrowwConnectionHealth.verifiedAt(ctx))
+          .put("lastAutomaticProbeAttemptAtMs",GrowwConnectionHealth.lastProbeAt(ctx))
+          .put("growwAuthorizationRequiresAction",GrowwConnectionHealth.accountActionNeeded(ctx))
+          .put("lastConnectionIssue",WatchStore.safeExplanation(GrowwConnectionHealth.issue(ctx)))
+          .put("note","A successful API response verifies authentication at that time. An idle Android app cannot guarantee a persistent open connection; TOTP values never exported.");
+        quota.put("growwConnection",connection);
         entry(zip,"quota_and_alert_health.json",quota.toString(2));
         entry(zip,"local_watchlist_and_health.json",localSummary(state,symbols).toString(2));
         // Automatic NSE discovery shortlist, coverage and archived promotions; no authentication fields.
