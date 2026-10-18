@@ -76,7 +76,7 @@ final class AmfiClassification {
       rows.put(row.getKey(),row.getValue());
     prefs.edit().putString("rows",rows.toString())
       .putString("origin","USER_IMPORTED_AMFI_CSV_NOT_AUTHENTICATED")
-      .putString("description",description==null?"":description.replaceAll("[^A-Za-z0-9._ -]","").substring(0,Math.min(70,description.length())))
+      .putString("description",description==null?"":description.replaceAll("[^A-Za-z0-9._ -]","").substring(0,Math.min(70,description.replaceAll("[^A-Za-z0-9._ -]","").length())))
       .putLong("importedAtMs",System.currentTimeMillis()).apply();
     classifications=map;return map.size();
   }
