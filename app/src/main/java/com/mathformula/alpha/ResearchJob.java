@@ -32,6 +32,9 @@ public final class ResearchJob extends JobService {
     ResearchAlerts.channel(c);
   }
   @Override public boolean onStartJob(JobParameters params){
+    getSharedPreferences("mathformula_research_heartbeat_v42",MODE_PRIVATE).edit()
+      .putLong("lastStartedMs",System.currentTimeMillis())
+      .putString("state","RUNNING_OR_SCHEDULED_BY_ANDROID").apply();
     cancelled=false;
     if(worker.isShutdown())worker=Executors.newSingleThreadExecutor();
     final boolean growwReady=new SecureGrowwStore(this).configured();
@@ -117,7 +120,15 @@ public final class ResearchJob extends JobService {
           }
         }
       }finally{
-        if(!cancelled)jobFinished(params,false);
+        if(!cancelled){
+          getSharedPreferences("mathformula_research_heartbeat_v42",MODE_PRIVATE).edit()
+            .putLong("lastFinishedMs",System.currentTimeMillis())
+            .putString("state","LAST_SCHEDULED_RESEARCH_FINISHED").apply();
+          jobFinished(params,false);
+        }else{
+          getSharedPreferences("mathformula_research_heartbeat_v42",MODE_PRIVATE).edit()
+            .putString("state","INTERRUPTED_BY_ANDROID").apply();
+        }
       }
     });
     return true;
