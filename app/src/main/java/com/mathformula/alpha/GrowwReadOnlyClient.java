@@ -95,7 +95,8 @@ final class GrowwReadOnlyClient {
     synchronized(AUTH_LOCK){
     String t=secrets.get("access_token");
     java.time.ZonedDateTime now=java.time.ZonedDateTime.now(IST);
-    if(sessionObtainedAt==0)sessionObtainedAt=secrets.sessionMs();
+    // Sync with a token renewed by another scanner instance on this phone.
+    sessionObtainedAt=secrets.sessionMs();
     java.time.ZonedDateTime expiry=null;
     if(sessionObtainedAt>0){
       java.time.ZonedDateTime original=java.time.Instant.ofEpochMilli(sessionObtainedAt).atZone(IST);
