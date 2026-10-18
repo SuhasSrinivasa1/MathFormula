@@ -75,7 +75,7 @@ final class DiagnosticExporter {
   }
   static JSONObject manifest(Context ctx,boolean hasServer,String status,int obsLines,int auditLines) throws Exception{
     JSONObject manifest=new JSONObject();
-    manifest.put("exportSchema","MathFormula-diagnostic-v1");
+    manifest.put("exportSchema","MathFormula-diagnostic-v4.1");
     String appVersion="unknown";
     try{appVersion=ctx.getPackageManager().getPackageInfo(ctx.getPackageName(),0).versionName;}
     catch(Exception ignored){}
@@ -134,7 +134,26 @@ final class DiagnosticExporter {
         entry(zip,"quota_and_alert_health.json",quota.toString(2));
         entry(zip,"local_watchlist_and_health.json",localSummary(state,symbols).toString(2));
         // Automatic NSE discovery shortlist, coverage and archived promotions; no authentication fields.
-        entry(zip,"local_nse_discovery.json",new LocalDiscovery(ctx).exportJson());
+        LocalDiscovery discovery=new LocalDiscovery(ctx);
+        entry(zip,"local_nse_discovery.json",discovery.exportJson());
+        JSONObject radar=new IntradayRadar(ctx).latest();
+        entry(zip,"intraday_breadth_coverage.json",radar.toString(2));
+        entry(zip,"amfi_classification_audit.json",new AmfiClassification(ctx).audit().toString(2));
+        entry(zip,"three_pm_freeze_audit.json",new ThreePmCapture(ctx).audit().toString(2));
+        entry(zip,"next_session_outcome_audit.json",new ForecastOutcomes(ctx).audit().toString(2));
+        JSONArray pool=discovery.latest().optJSONArray("verifiedTechnicalPool");
+        entry(zip,"dual_score_factor_evidence.json",
+          new DualFactorEvidence(ctx).reports(pool,System.currentTimeMillis()).toString(2));
+        JSONObject capability=new JSONObject()
+          .put("nseUniverseScanning","Groww batch quotes, Android-best-effort historical resume")
+          .put("alpha30FullScore","REQUIRES_30_EVIDENCED_FACTORS")
+          .put("alpha40FullScore","REQUIRES_40_EVIDENCED_FACTORS")
+          .put("amfiClassification","USER_CSV_IMPORT_NOT_AUTOMATICALLY_AUTHENTICATED")
+          .put("threePmFreeze","OBSERVED_GROWW_LTP_15_00_TO_15_02_BEST_EFFORT")
+          .put("winLoss","SUBSEQUENT_EOD_RESEARCH_DIRECTION_NOT_ACTUAL_TRADE")
+          .put("autoRemediation","NOT_ENABLED_WITHOUT_OUT_OF_SAMPLE_VALIDATION")
+          .put("execution","NO_ORDERS_NO_PAPER_TRADES");
+        entry(zip,"v4_1_capability_audit.json",capability.toString(2));
         entry(zip,"observations.jsonl",recent);
         entry(zip,"state_changes_and_errors.jsonl",events);
         if(serverData!=null)entry(zip,"server_research_history.json",serverData.toString(2));
@@ -147,6 +166,7 @@ final class DiagnosticExporter {
           "or proof of winning trades. A formula change requires historical and forward validation, "+
           "and an explicit version change, not automatic tweaking.\n"+
           "observations.jsonl contains bounded on-device observations (rolling files).\n"+
+          "v4.1 adds AMFI import coverage, 15:00 immutable freeze observations, subsequent EOD research outcomes and dual-factor missingness.\n"+
           "server_research_history.json is included only when server connection succeeds.\n");
       }
     }
