@@ -99,12 +99,12 @@ public final class ScannerService extends Service {
     return !t.isBefore(LocalTime.of(9,15))&&t.isBefore(LocalTime.of(15,30));
   }
   private Notification notification(String caption){
-    Intent open=new Intent(this,MainActivity.class);
+    Intent open=new Intent(this,HomeActivity.class);
     PendingIntent pi=PendingIntent.getActivity(this,0,open,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
     return new Notification.Builder(this,CHANNEL)
-      .setContentTitle("MathFormula · local NSE monitoring")
+      .setContentTitle("MathFormula · Live NSE monitor")
       .setContentText(caption)
-      .setSmallIcon(android.R.drawable.ic_menu_view)
+      .setSmallIcon(R.drawable.ic_mathformula_notification)
       .setContentIntent(pi).setOngoing(true).setOnlyAlertOnce(true)
       .setCategory(Notification.CATEGORY_SERVICE)
       .setShowWhen(true).build();
@@ -129,9 +129,9 @@ public final class ScannerService extends Service {
     }
     try{
       if(Build.VERSION.SDK_INT>=29){
-        startForeground(70,notification("1m quotes · 5m analysis · read-only"),
+        startForeground(70,notification("Active · Groww 1m quotes / 5m checks · read-only"),
           ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
-      }else startForeground(70,notification("5-minute research checks · read-only"));
+      }else startForeground(70,notification("Active · five-minute Groww research · read-only"));
     }catch(RuntimeException ex){
       store.recordScan(false,"Android refused foreground monitoring; open app and retry",0);
       store.setEnabled(false);stopSelf();return START_NOT_STICKY;
