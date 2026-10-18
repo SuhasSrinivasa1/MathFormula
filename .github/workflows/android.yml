@@ -54,29 +54,29 @@ jobs:
       - name: Upload debug APK for Android QA (not a production upgrade)
         uses: actions/upload-artifact@v4
         with:
-          name: MathFormula-v4.0.1-DEBUG-QA
+          name: MathFormula-v4.0.2-DEBUG-QA
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Stage APK
         run: |
           if [[ "$STABLE_SIGNING_CONFIGURED" == "true" ]]; then
-            cp app/build/outputs/apk/release/app-release.apk MathFormula-v4.0.1-Stable.apk
+            cp app/build/outputs/apk/release/app-release.apk MathFormula-v4.0.2-Stable.apk
           else
-            cp app/build/outputs/apk/release/app-release-unsigned.apk MathFormula-v4.0.1-UNSIGNED.apk
+            cp app/build/outputs/apk/release/app-release-unsigned.apk MathFormula-v4.0.2-UNSIGNED.apk
           fi
       - name: Upload stable signed release APK
         if: env.STABLE_SIGNING_CONFIGURED == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: MathFormula-v4.0.1-Stable
-          path: MathFormula-v4.0.1-Stable.apk
+          name: MathFormula-v4.0.2-Stable
+          path: MathFormula-v4.0.2-Stable.apk
           if-no-files-found: error
       - name: Upload unsigned release for secure offline signing
         if: env.STABLE_SIGNING_CONFIGURED != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: MathFormula-v4.0.1-UNSIGNED
-          path: MathFormula-v4.0.1-UNSIGNED.apk
+          name: MathFormula-v4.0.2-UNSIGNED
+          path: MathFormula-v4.0.2-UNSIGNED.apk
           if-no-files-found: error
       - name: Stage Android SDK signing utility for local signing
         if: env.STABLE_SIGNING_CONFIGURED != 'true'
@@ -85,7 +85,7 @@ jobs:
         if: env.STABLE_SIGNING_CONFIGURED != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: MathFormula-v4.0.1-apksigner
+          name: MathFormula-v4.0.2-apksigner
           path: apksigner.jar
           if-no-files-found: error
       - name: Publish major release candidate (signed or explicitly debug-signed)
@@ -94,17 +94,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if [[ "$STABLE_SIGNING_CONFIGURED" == "true" ]]; then
-            ASSET="MathFormula-v4.0.1-Stable.apk"
+            ASSET="MathFormula-v4.0.2-Stable.apk"
             NOTES="Read-only Groww-connected major release candidate. Release signing available. Never places orders. Alpha-40 BUY blocked until complete evidence."
           else
-            ASSET="MathFormula-v4.0.1-Debug-Signed.apk"
+            ASSET="MathFormula-v4.0.2-Debug-Signed.apk"
             cp app/build/outputs/apk/debug/app-debug.apk "$ASSET"
             NOTES="Read-only Groww-connected major release candidate. DEBUG-SIGNED TEST BUILD because stable keystore is not configured. Not a production-signed upgrade. No paper trades, no order placement. Do not treat missing factor scores as verified."
           fi
-          if gh release view v4.0.1-rc1 >/dev/null 2>&1; then
-            gh release edit v4.0.1-rc1 --target "$GITHUB_SHA" --prerelease --title "MathFormula v4.0.1 - Major Read-Only"
+          if gh release view v4.0.2-rc1 >/dev/null 2>&1; then
+            gh release edit v4.0.2-rc1 --target "$GITHUB_SHA" --prerelease --title "MathFormula v4.0.2 - Major Read-Only"
           else
-            gh release create v4.0.1-rc1 --target "$GITHUB_SHA" --prerelease \
-              --title "MathFormula v4.0.1 - Major Read-Only" --notes "$NOTES"
+            gh release create v4.0.2-rc1 --target "$GITHUB_SHA" --prerelease \
+              --title "MathFormula v4.0.2 - Major Read-Only" --notes "$NOTES"
           fi
-          gh release upload v4.0.1-rc1 "$ASSET" --clobber
+          gh release upload v4.0.2-rc1 "$ASSET" --clobber
