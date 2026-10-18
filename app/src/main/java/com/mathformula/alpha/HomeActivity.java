@@ -1216,6 +1216,26 @@ public final class HomeActivity extends AppCompatActivity {
     space(7);
     root.addView(text("Archived observations can have gaps. These are not filled with estimated returns.",11,MUTED,false));
     MajorReleaseDashboard.closedExtras(this,root,records);
+    space(12);
+    ForecastOutcomes outcomeStore=new ForecastOutcomes(this);
+    JSONArray nextDayResults=outcomeStore.closed();
+    root.addView(text("3 PM forecast outcomes · observed market movement",17,INK,true));
+    root.addView(text("Measured against the later Groww EOD close; no hypothetical order, actual profit or guaranteed next trading day is inferred. NSE holiday/date verification remains outstanding.",11,AMBER,false));
+    if(nextDayResults.length()==0){
+      root.addView(text("No subsequent complete daily candles have been evaluated for a frozen 3 PM record.",12,MUTED,false));
+    }
+    for(int i=Math.max(0,nextDayResults.length()-20);i<nextDayResults.length();i++){
+      JSONObject item=nextDayResults.optJSONObject(i);if(item==null)continue;
+      LinearLayout c=card();
+      c.addView(text(item.optString("symbol","?")+" · "+item.optString("outcome","UNVERIFIED")+
+        "  (research only)",14,INK,true));
+      c.addView(text("Frozen date "+item.optString("freezeDate","?")+
+        " · observed closing session "+item.optString("sessionDate","?")+
+        " · return "+percent(item.optDouble("referenceReturnPct",Double.NaN)),11,MUTED,false));
+      c.addView(text("Reason: "+item.optString("reason","No verified explanation"),12,INK,false));
+      c.addView(text("Remediation review: "+item.optString("remediation","Not available"),11,MUTED,false));
+      c.addView(text("OUTCOME NOT INDEPENDENTLY VERIFIED · No broker execution",10,AMBER,true));
+    }
   }
   private void render(){
     if(root==null)return;
