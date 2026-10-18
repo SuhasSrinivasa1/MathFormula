@@ -27,7 +27,8 @@ final class GrowwReadOnlyClient {
   private static final ZoneId IST=ZoneId.of("Asia/Kolkata");
   private final SecureGrowwStore secrets;
   private final android.content.Context quotaContext;
-  private long lastAuthAttempt=0;
+  private static long lastAuthAttempt=0;
+  private static final Object AUTH_LOCK=new Object();
   private long sessionObtainedAt=0;
   private final java.util.Map<String,String> dailyCacheDate=new java.util.HashMap<>();
   private final java.util.Map<String,Double> dailyCacheHigh=new java.util.HashMap<>();
@@ -43,6 +44,9 @@ final class GrowwReadOnlyClient {
     String note="";
   }
   private JSONObject call(String method,String path,String auth,String body) throws Exception {
+    return callAttempt(method,path,auth,body,true);
+  }
+  private JSONObject callAttempt(String method,String path,String auth,String body,boolean allowRenewal) throws Exception {
     if(!path.startsWith("/v1/live-data/quote?") && !path.startsWith("/v1/historical/candles?")
        && !path.startsWith("/v1/live-data/ohlc?") && !path.startsWith("/v1/live-data/ltp?")
        && !path.equals("/v1/token/api/access"))throw new SecurityException("Read-only API allowlist");
@@ -60,11 +64,21 @@ final class GrowwReadOnlyClient {
       }
       int status=c.getResponseCode();
       if(status==401){
-        if(!path.equals("/v1/token/api/access"))resetSession();
-        throw new SecurityException("Groww access token rejected (401). Session cleared for safe renewal; saved TOTP credentials retained");
+        if(!path.equals("/v1/token/api/access")){
+          resetSession();
+          if(allowRenewal){
+            // One automatic TOTP renewal on actual provider 401.
+            try{return callAttempt(method,path,token(),body,false);}
+            catch(Exception ex){GrowwConnectionHealth.failure(quotaContext,ex);throw ex;}
+          }
+        }
+        SecurityException rejected=new SecurityException("Groww access token rejected (401). Automatic renewal unsuccessful; saved TOTP retained");
+        GrowwConnectionHealth.failure(quotaContext,rejected);throw rejected;
       }
-      if(status==403)
-        throw new SecurityException("Groww access denied (403). Check account approval, API subscription and permissions; stored TOTP credentials retained");
+      if(status==403){
+        SecurityException rejected=new SecurityException("Groww access denied (403). Account approval/API permissions needed; saved TOTP retained");
+        GrowwConnectionHealth.failure(quotaContext,rejected);throw rejected;
+      }
       if(status==429){GrowwQuota.backoff(quotaContext);throw new IllegalStateException("Groww rate limit reached (HTTP 429); 30 minute account cooldown enabled");}
       if(status<200||status>=300)throw new IllegalStateException("Groww HTTP "+status);
       StringBuilder sb=new StringBuilder();
@@ -73,10 +87,12 @@ final class GrowwReadOnlyClient {
       }
       JSONObject j=new JSONObject(sb.toString());
       if("FAILURE".equalsIgnoreCase(j.optString("status")))throw new IllegalStateException("Groww API returned FAILURE");
+      if(!path.equals("/v1/token/api/access"))GrowwConnectionHealth.success(quotaContext);
       return j;
     }finally{c.disconnect();}
   }
   private String token() throws Exception {
+    synchronized(AUTH_LOCK){
     String t=secrets.get("access_token");
     java.time.ZonedDateTime now=java.time.ZonedDateTime.now(IST);
     if(sessionObtainedAt==0)sessionObtainedAt=secrets.sessionMs();
@@ -102,6 +118,7 @@ final class GrowwReadOnlyClient {
     secrets.put("access_token",t);sessionObtainedAt=System.currentTimeMillis();
     secrets.sessionMs(sessionObtainedAt);
     return t;
+    }
   }
   synchronized void resetSession(){sessionObtainedAt=0;secrets.clearSession();}
   private String encoded(String s) throws Exception{return URLEncoder.encode(s,"UTF-8");}
