@@ -533,7 +533,8 @@ final class LocalDiscovery {
       List<Broad> broad=new ArrayList<>();
       int successfulBatches=0,failedBatches=0;
       boolean broadCacheUsed=false;
-      if(afterHours&&researchSession.equals(prefs.getString("overnightBroadSession",""))){
+      if(afterHours&&prefs.getInt("overnightBroadPolicy",0)==17 &&
+         researchSession.equals(prefs.getString("overnightBroadSession",""))){
         try{
           JSONArray saved=new JSONArray(prefs.getString("overnightBroadSnapshot","[]"));
           for(int i=0;i<saved.length();i++)broad.add(parseBroad(saved.getJSONObject(i)));
@@ -590,7 +591,7 @@ final class LocalDiscovery {
           JSONArray saved=new JSONArray();
           for(Broad item:broad)saved.put(jsonBroad(item));
           prefs.edit().putString("overnightBroadSession",researchSession)
-            .putString("overnightBroadSnapshot",saved.toString())
+            .putString("overnightBroadSnapshot",saved.toString()).putInt("overnightBroadPolicy",17)
             .putInt("overnightQuotedCount",prices.size())
             .putInt("overnightSuccessfulBatches",successfulBatches)
             .putInt("overnightFailedBatches",failedBatches).commit();
