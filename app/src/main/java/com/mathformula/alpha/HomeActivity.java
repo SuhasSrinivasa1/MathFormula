@@ -186,7 +186,8 @@ public final class HomeActivity extends AppCompatActivity {
   private String serverUrl(){
     return getSharedPreferences("mathformula_shared_runtime_v30",MODE_PRIVATE).getString("server_url","");
   }
-  private boolean serverConfigured(){return !serverUrl().isEmpty();}
+  /** Phone-only Groww + public internet research. Legacy viewer configuration is disabled. */
+  private boolean serverConfigured(){return false;}
   private void fetchRemote(){
     if(remoteBusy||!serverConfigured())return;
     long now=System.currentTimeMillis();
@@ -405,9 +406,9 @@ public final class HomeActivity extends AppCompatActivity {
   private void scanStatusCard(){
     LinearLayout c=card();
     boolean marketOpen=open();
-    String state=serverConfigured()?"SERVER VIEW":busy||discovery.scanning()?
+    String state=busy||discovery.scanning()?
       "SCAN RUNNING":!marketOpen?"NEXT-SESSION RESEARCH":"AUTO DISCOVERY ACTIVE";
-    c.addView(text("Scanner status  ·  "+state,15,
+    c.addView(text("Groww NSE scan  ·  "+state,15,
       busy||discovery.scanning()?BLUE:marketOpen?GREEN:AMBER,true));
     spaceIn(c,7);
     if(serverConfigured()){
@@ -504,14 +505,14 @@ public final class HomeActivity extends AppCompatActivity {
     c.addView(button,new LinearLayout.LayoutParams(-1,dp(48)));
     if(!marketOpen && !serverConfigured()){
       spaceIn(c,6);
-      c.addView(text("Full NSE discovery is limited to 16:30–07:30 IST. During market hours we monitor the saved shortlist.",11,AMBER,false));
+      c.addView(text("Historical full-NSE research runs after official EOD data is available. During market hours the Groww radar and priority quotes run subject to account limits.",11,AMBER,false));
     }
   }
   private void tabHeader(){
     LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);
     LinearLayout brand=new LinearLayout(this);brand.setOrientation(LinearLayout.VERTICAL);
     brand.addView(text("MathFormula",27,INK,true));
-    brand.addView(text("MAJOR RELEASE v4.0  /  REAL-DATA RESEARCH",10,BLUE,true));
+    brand.addView(text("MAJOR RELEASE v4.0.2  /  GROWW + INTERNET",10,BLUE,true));
     long verified=getSharedPreferences("mathformula_groww_connection_v22",MODE_PRIVATE).getLong("groww_verified_at_v22",0L);
     long since=System.currentTimeMillis()-verified;
     boolean authorized=secrets.configured()&&verified>0&&since>=0&&since<=15*60_000L;
@@ -973,7 +974,7 @@ public final class HomeActivity extends AppCompatActivity {
        12,MUTED,false));
     space(9);
     if(!serverConfigured()){
-      root.addView(text("PHONE-ONLY: local foreground scanning and local notifications. NSE-wide price radar roughly every 15 minutes while the process runs; Android/Vivo can delay or terminate the service. All 30 factors require independent evidence.",12,AMBER,true));
+      root.addView(text("GROWW NSE DATA + PUBLIC INTERNET RESEARCH · Local market radar runs while Android allows it. Whole-universe completeness and both model scores require verified data; missing factors are not guessed.",12,AMBER,true));
     }
     space(13);
     LinearLayout overview=card();
@@ -1070,7 +1071,7 @@ public final class HomeActivity extends AppCompatActivity {
       root.addView(text("Backend connection pending · cannot validate today's 3 PM freeze",12,AMBER,true));
     }
     MajorReleaseDashboard.nextDay(this,root,scan,candidate);
-    root.addView(text("Live quotes and 3 PM timestamps require the actual Groww-connected scanner. Closing stock prices cannot be backfilled as a 3 PM recommendation.",11,MUTED,false));
+    root.addView(text("3 PM observations must come from fresh Groww quotes and timestamped sources. Closing prices cannot be backfilled as an earlier 3 PM recommendation. Keep the phone scanner running before the freeze.",11,MUTED,false));
   }
   private void renderClosed(){
     JSONArray records=serverConfigured()?(remoteConnected?remoteClosed:new JSONArray()):ledger.closed();
