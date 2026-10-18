@@ -10,8 +10,8 @@ android {
         applicationId 'com.mathformula.alpha.stable'
         minSdk 26
         targetSdk 35
-        versionCode 403
-        versionName '4.0.3'
+        versionCode 410
+        versionName '4.1.0'
         manifestPlaceholders = [appLabel: 'MathFormula']
     }
     signingConfigs {
@@ -29,7 +29,7 @@ android {
         debug {
             applicationIdSuffix '.qa'
             versionNameSuffix '-qa'
-            manifestPlaceholders = [appLabel: 'MathFormula v4']
+            manifestPlaceholders = [appLabel: 'MathFormula v4.1']
         }
         release {
             if (stableKeystore && stablePassword) signingConfig signingConfigs.stableRelease
