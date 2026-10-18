@@ -39,7 +39,7 @@ final class MajorReleaseDashboard {
     root.addView(line(a,title,16,INK,true));root.addView(line(a,body,12,MUTED,false));
   }
   private static boolean isVerifiedCap(JSONObject row,String cap){
-    if(row==null || !row.optBoolean("capVerified",false))return false;
+    if(row==null || (!row.optBoolean("capVerified",false)&&!row.optBoolean("capImported",false)))return false;
     String value=row.optString("amfiCap",row.optString("marketCapBucket","")).toUpperCase(Locale.US);
     return cap.equals(value)|| (cap+"-CAP").equals(value);
   }
@@ -52,7 +52,7 @@ final class MajorReleaseDashboard {
   }
   static void capGrid(Activity a,LinearLayout root,JSONArray picks,String context){
     root.addView(line(a,context+"  |  Official AMFI buckets",17,BLUE,true));
-    root.addView(line(a,"Only independently verified market-cap membership is ranked. The two scores require all 30 / 40 measured factors.",11,AMBER,false));
+    root.addView(line(a,"Market-cap rows from a user-imported AMFI file are provisional until independently authenticated. Alpha scores require all 30 / 40 measured factors.",11,AMBER,false));
     for(int c=0;c<3;c++){
       root.addView(line(a,LABELS[c]+"  •  Top 3",15,INK,true));
       int found=0;
@@ -62,11 +62,13 @@ final class MajorReleaseDashboard {
         String sym=row.optString("symbol","UNKNOWN");
         TextView title=line(a,found+". "+sym+"  ·  "+row.optString("status","WATCH"),13,INK,true);
         root.addView(title);
+        if(row.optBoolean("capImported",false)&&!row.optBoolean("capVerified",false))
+          root.addView(line(a,"AMFI category: user imported, not independently verified",10,AMBER,false));
         root.addView(line(a,"Alpha-30: "+score(row,"alpha30",30)+"    Alpha-40: "+score(row,"alpha40",40),11,MUTED,false));
         root.addView(line(a,"Price timestamp: "+(row.optLong("tradeMs",0)>0?Instant.ofEpochMilli(row.optLong("tradeMs")).atZone(MarketSchedule.IST).toString():"missing"),10,MUTED,false));
       }
       for(int j=found;j<3;j++)
-        root.addView(line(a,(j+1)+". UNFILLED · verified AMFI membership / full-NSE score not supplied",12,AMBER,false));
+        root.addView(line(a,(j+1)+". UNFILLED · source-backed cap identity or qualified candidate missing",12,AMBER,false));
     }
   }
   private static String date(long now){return Instant.ofEpochMilli(now).atZone(MarketSchedule.IST).toLocalDate().toString();}
