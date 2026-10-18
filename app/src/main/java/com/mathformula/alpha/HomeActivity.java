@@ -46,6 +46,8 @@ public final class HomeActivity extends AppCompatActivity {
   private static final int EXPORT=867,IMPORT_EVIDENCE=868;
   private final Handler handler=new Handler(Looper.getMainLooper());
   private final ExecutorService worker=Executors.newSingleThreadExecutor();
+  private final ExecutorService authWorker=Executors.newSingleThreadExecutor();
+  private volatile boolean growwProbeBusy=false;
   private LocalDiscovery discovery;
   private IntradayRadar intradayRadar;
   private RecommendationLedger ledger;
@@ -70,6 +72,7 @@ public final class HomeActivity extends AppCompatActivity {
       boolean open=MarketSchedule.weekdayTradingTime(System.currentTimeMillis());
       // Keep the user's selected section. Closing bell does not close a valid research watch.
       startedWhileOpen=open;
+      ensureGrowwAccessIfDue();
       if(serverConfigured())fetchRemote();
       else if(open){
         // Intraday universe quotes must be independently refreshed; EOD history stays frozen.
@@ -160,6 +163,7 @@ public final class HomeActivity extends AppCompatActivity {
     }
     handler.removeCallbacks(autoUpdate);
     handler.postDelayed(autoUpdate,200);
+    ensureGrowwAccessIfDue();
     autoStartPhoneMonitoringIfEligible();
   }
   /** Phone monitoring is best effort; only a deployed server can scan continuously. */
@@ -182,7 +186,27 @@ public final class HomeActivity extends AppCompatActivity {
     }
   }
   @Override protected void onPause(){handler.removeCallbacks(autoUpdate);super.onPause();}
-  @Override protected void onDestroy(){worker.shutdownNow();super.onDestroy();}
+  @Override protected void onDestroy(){worker.shutdownNow();authWorker.shutdownNow();super.onDestroy();}
+  private void ensureGrowwAccessIfDue(){
+    if(secrets==null||growwProbeBusy||!GrowwConnectionHealth.needsProbe(this,secrets.configured()))return;
+    growwProbeBusy=true;
+    GrowwConnectionHealth.markProbe(this);
+    authWorker.execute(()->{
+      try{
+        GrowwReadOnlyClient.Market check=groww.quote("RELIANCE");
+        if(!Double.isFinite(check.price)||check.price<=0)
+          throw new IllegalStateException("No usable Groww quote");
+        GrowwConnectionHealth.success(this);
+        GrowwConnectionHealth.marketTrade(this,check.lastTradeMs);
+      }catch(Exception e){
+        GrowwConnectionHealth.failure(this,e);
+      }
+      handler.post(()->{
+        growwProbeBusy=false;
+        if(!isFinishing()&&!isDestroyed())render();
+      });
+    });
+  }
   private String serverUrl(){
     return getSharedPreferences("mathformula_shared_runtime_v30",MODE_PRIVATE).getString("server_url","");
   }
@@ -513,12 +537,11 @@ public final class HomeActivity extends AppCompatActivity {
     LinearLayout brand=new LinearLayout(this);brand.setOrientation(LinearLayout.VERTICAL);
     brand.addView(text("MathFormula",27,INK,true));
     brand.addView(text("MAJOR RELEASE v4.0.2  /  GROWW + INTERNET",10,BLUE,true));
-    long verified=getSharedPreferences("mathformula_groww_connection_v22",MODE_PRIVATE).getLong("groww_verified_at_v22",0L);
-    long since=System.currentTimeMillis()-verified;
-    boolean authorized=secrets.configured()&&verified>0&&since>=0&&since<=15*60_000L;
-    brand.addView(text(authorized?"✓ Groww authenticated":
-        secrets.configured()?"○ Groww credentials saved · session check pending":"○ Groww not connected",
-        11,authorized?GREEN:AMBER,true));
+    long verified=GrowwConnectionHealth.verifiedAt(this);
+    long age=System.currentTimeMillis()-verified;
+    boolean authorized=secrets.configured()&&verified>0&&age>=0&&age<=20*60_000L;
+    brand.addView(text(GrowwConnectionHealth.label(this,secrets.configured()),
+        11,authorized?GREEN:GrowwConnectionHealth.accountActionNeeded(this)?RED:MUTED,true));
     top.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
     TextView settings=text("⚙",24,BLUE,true);
     settings.setContentDescription("Open streamlined settings");
