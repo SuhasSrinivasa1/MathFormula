@@ -36,7 +36,7 @@ final class GrowwReadOnlyClient {
   GrowwReadOnlyClient(SecureGrowwStore secrets){this.secrets=secrets;this.quotaContext=secrets.context();}
   static final class Market {
     String symbol; double price=Double.NaN,change=Double.NaN,vwap=Double.NaN,bid=Double.NaN,ask=Double.NaN;
-    double high=Double.NaN,low=Double.NaN,dayVolume=Double.NaN,spreadBps=Double.NaN;
+    double high=Double.NaN,low=Double.NaN,dayVolume=Double.NaN,spreadBps=Double.NaN,marketCapReported=Double.NaN;
     long lastTradeMs;int fiveCount, fifteenCount;
     double breakoutLevel=Double.NaN; String referenceAsOf="",referenceSource="";boolean two5m=false;
     double lastFiveClose=Double.NaN, lastFifteenClose=Double.NaN;
@@ -256,6 +256,7 @@ final class GrowwReadOnlyClient {
     m.price=p.optDouble("last_price",Double.NaN);
     m.change=p.optDouble("day_change_perc",Double.NaN);
     m.vwap=p.optDouble("average_price",Double.NaN);
+    m.marketCapReported=p.optDouble("market_cap",Double.NaN);
     m.bid=p.optDouble("bid_price",Double.NaN);
     m.ask=p.optDouble("offer_price",Double.NaN);
     m.high=p.optDouble("high_trade_range",Double.NaN);
