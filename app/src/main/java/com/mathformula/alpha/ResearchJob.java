@@ -89,6 +89,13 @@ public final class ResearchJob extends JobService {
               }
             }
             if(!cancelled){
+              // Paid Groww market_cap hydration; separately rate-limited and cached.
+              try{
+                org.json.JSONArray leaders=radar.latest().optJSONArray("top");
+                if(leaders==null||leaders.length()==0)
+                  leaders=discovery.latest().optJSONArray("top");
+                new GrowwCapAuto(this).refresh(client,leaders,12);
+              }catch(Exception ignored){}
               ResearchAlerts.evaluate(this,client,discovery.latest());
               ResearchAlerts.evaluateRadar(this,client,radar);
             }
