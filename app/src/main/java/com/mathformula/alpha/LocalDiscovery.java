@@ -578,7 +578,7 @@ final class LocalDiscovery {
             lo=ohlcField(data,"low");
           if(!(op>0&&Double.isFinite(hi)&&Double.isFinite(lo)&&hi>=lo))continue;
           double move=100*(price/op-1);
-          if(price<25||price>15000||move<0.7||move>8.0)continue;
+          if(price<25||price>15000||move<0.7)continue; // strong movers remain in broad discovery (not BUY-eligible)
           double location=clamp((price-lo)/Math.max(.01,hi-lo),0,1);
           if(location<.55)continue;
           Broad item=new Broad();item.symbol=symbol;item.price=price;item.open=op;
@@ -668,7 +668,7 @@ final class LocalDiscovery {
             if(distance< -2.5||distance>4.0){
               countFailure(rejectionReasons,"OUTSIDE_BREAKOUT_RANGE");continue;
             }
-            if(daily<0.25||daily>8.0||location<.55){
+            if(daily<0.25||location<.55){ // overextended observations are research-only, not automatic BUY
               countFailure(rejectionReasons,"MOMENTUM_OR_CLOSE_STRENGTH");continue;
             }
             double strength=40*clamp(daily/5.,0,1)+30*location+
@@ -797,7 +797,7 @@ final class LocalDiscovery {
          .put("universeCoverage",universeDiagnostics)
          .put("verificationRejectReasons",rejectionReasons)
          .put("verificationAttempted",checked)
-         .put("historicalVerificationCap",0)
+         .put("historicalVerificationCap",0).put("intradayMoveUpperCutoffRemoved",true)
          .put("researchCutoffDate",afterHours?researchSession:"")
          .put("completedFullResearch",afterHours&&checked==toVerify&&failedBatches==0)
          .put("priorityCount",priorityWatchlist().length())
