@@ -148,6 +148,57 @@ public final class SafeSettingsActivity extends Activity {
     addButton(amfiBusy?"Refreshing official classification…":"Refresh AMFI now",
       ()->startAmfiSync(true));
     rule();
+    heading("Live phone monitoring · Groww");
+    long beat=getSharedPreferences("mathformula_local_monitor_v32",MODE_PRIVATE).getLong("heartbeat_ms",0L);
+    String monitor=getSharedPreferences("mathformula_local_monitor_v32",MODE_PRIVATE)
+      .getString("monitoring_state","NOT STARTED");
+    boolean active=beat>0&&System.currentTimeMillis()-beat<150_000L;
+    boolean market=MarketSchedule.weekdayTradingTime(System.currentTimeMillis());
+    content.addView(label(!market?
+      "NSE cash market CLOSED · foreground quote monitor is intentionally stopped. Off-market research uses scheduled background jobs.":
+      active?"Live monitor ACTIVE · persistent Android notification enabled":
+        "Market open · monitor idle, start/restart below",12,active?Color.rgb(16,135,92):MUTED,true));
+    content.addView(label("Last live heartbeat: "+(beat>0?new java.util.Date(beat).toString():"No running-session heartbeat")+
+      " · "+monitor,11,MUTED,false));
+    addButton("Start / restart live monitoring",()->{
+      if(!MarketSchedule.weekdayTradingTime(System.currentTimeMillis())){
+        Toast.makeText(this,"NSE market closed. Off-market research runs periodically; live monitor starts during trading hours.",Toast.LENGTH_LONG).show();
+        return;
+      }
+      if(!secure.configured()){
+        Toast.makeText(this,"Save your Groww credentials first",Toast.LENGTH_LONG).show();return;
+      }
+      getSharedPreferences("mathformula_auto_monitor_v29",MODE_PRIVATE)
+        .edit().putBoolean("opted_out",false).apply();
+      Intent start=new Intent(this,ScannerService.class).setAction(ScannerService.START);
+      try{
+        if(android.os.Build.VERSION.SDK_INT>=26)startForegroundService(start);
+        else startService(start);
+        Toast.makeText(this,"Live monitor start requested · check persistent notification",Toast.LENGTH_LONG).show();
+      }catch(RuntimeException blocked){
+        Toast.makeText(this,"Android prevented monitoring start. Check unrestricted battery and autostart permissions.",Toast.LENGTH_LONG).show();
+      }
+      draw();
+    });
+    addButton("Stop live monitoring",()->{
+      getSharedPreferences("mathformula_auto_monitor_v29",MODE_PRIVATE)
+        .edit().putBoolean("opted_out",true).apply();
+      startService(new Intent(this,ScannerService.class).setAction(ScannerService.STOP));
+      message="Live monitoring stopped at your request; off-market research remains separate";
+      draw();
+    });
+    addButton("Android battery/background access",()->{
+      try{
+        Intent i=new Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+        startActivity(i);
+      }catch(Exception unavailable){
+        Intent i=new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+        i.setData(Uri.parse("package:"+getPackageName()));
+        startActivity(i);
+      }
+    });
+    content.addView(label("For Vivo, also enable MathFormula Autostart/Background activity and Unrestricted battery in device settings. A persistent notification helps identify active monitoring but does not bypass Android service limits.",11,AMBER,false));
+    rule();
     heading("Diagnostics and notifications");
     content.addView(label(ResearchAlerts.permission(this)?
        "Android notification permission: enabled":"Android notification permission: disabled",12,MUTED,false));
