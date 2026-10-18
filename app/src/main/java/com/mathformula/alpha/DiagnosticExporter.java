@@ -139,6 +139,7 @@ final class DiagnosticExporter {
         JSONObject radar=new IntradayRadar(ctx).latest();
         entry(zip,"intraday_breadth_coverage.json",radar.toString(2));
         entry(zip,"amfi_classification_audit.json",new AmfiClassification(ctx).audit().toString(2));
+        entry(zip,"groww_automatic_cap_audit.json",new GrowwCapAuto(ctx).audit().toString(2));
         entry(zip,"three_pm_freeze_audit.json",new ThreePmCapture(ctx).audit().toString(2));
         entry(zip,"next_session_outcome_audit.json",new ForecastOutcomes(ctx).audit().toString(2));
         JSONArray pool=discovery.latest().optJSONArray("verifiedTechnicalPool");
@@ -148,7 +149,7 @@ final class DiagnosticExporter {
           .put("nseUniverseScanning","Groww batch quotes, Android-best-effort historical resume")
           .put("alpha30FullScore","REQUIRES_30_EVIDENCED_FACTORS")
           .put("alpha40FullScore","REQUIRES_40_EVIDENCED_FACTORS")
-          .put("amfiClassification","USER_CSV_IMPORT_NOT_AUTOMATICALLY_AUTHENTICATED")
+          .put("amfiClassification","AUTO_GROWW_MARKET_CAP_ESTIMATE_NOT_OFFICIAL_AMFI_AVERAGE")
           .put("threePmFreeze","OBSERVED_GROWW_LTP_15_00_TO_15_02_BEST_EFFORT")
           .put("winLoss","SUBSEQUENT_EOD_RESEARCH_DIRECTION_NOT_ACTUAL_TRADE")
           .put("autoRemediation","NOT_ENABLED_WITHOUT_OUT_OF_SAMPLE_VALIDATION")
