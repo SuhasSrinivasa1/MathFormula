@@ -25,7 +25,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Defensive Android-native settings screen for the v4.0.2 hotfix.
+ * Android-native Groww settings with automatic revalidation on resume.
  * All credentials remain in the existing AndroidKeystore-backed SecureGrowwStore.
  * Does not place orders, simulate trades, or calculate missing Alpha scores.
  * Does not instantiate Material widgets or research engines during initialization.
@@ -98,7 +98,7 @@ public final class SafeSettingsActivity extends Activity {
     }catch(RuntimeException exception){
       initialized=false;
       content.removeAllViews();
-      content.addView(label("MathFormula v4.0.2 · Settings recovery",22,NAVY,true));
+      content.addView(label("MathFormula v4.0.3 · Settings recovery",22,NAVY,true));
       content.addView(label("The Android Keystore could not initialize. No credentials were erased. Restart your phone and reopen Settings, or export a crash log for diagnosis.",14,AMBER,false));
       addButton("Return to MathFormula",this::finish);
     }
@@ -106,13 +106,18 @@ public final class SafeSettingsActivity extends Activity {
   private void draw(){
     if(!initialized||content==null)return;
     content.removeAllViews();
-    heading("MathFormula 4.0.1");
+    heading("MathFormula 4.0.3");
     content.addView(label("Settings · read-only live market research",13,MUTED,false));
     content.addView(label(message,12,AMBER,false));
     rule();
     heading("Groww API connection");
     content.addView(label("Enter the Groww Trade API TOTP token and Base32 TOTP secret. Existing encrypted credentials remain saved when these fields are blank.",12,MUTED,false));
-    content.addView(label("Saved credentials: "+(secure.configured()?"YES":"NO"),12,NAVY,true));
+    content.addView(label("Saved TOTP credentials: "+(secure.configured()?"YES":"NO"),12,NAVY,true));
+    long verified=GrowwConnectionHealth.verifiedAt(this);
+    boolean fresh=verified>0&&System.currentTimeMillis()-verified<=20*60_000L;
+    content.addView(label(GrowwConnectionHealth.label(this,secure.configured()),13,
+      GrowwConnectionHealth.accountActionNeeded(this)?AMBER:fresh?Color.rgb(19,123,85):MUTED,true));
+    content.addView(label("Groww access tokens expire daily at 06:00 IST. Saved TOTP credentials are used to renew them automatically. Android cannot guarantee an uninterrupted phone connection when sleeping.",11,MUTED,false));
     tokenField=field("Groww TOTP token · leave blank if saved",true);
     secretField=field("Groww TOTP secret · leave blank if saved",true);
     content.addView(tokenField);content.addView(secretField);
@@ -173,34 +178,41 @@ public final class SafeSettingsActivity extends Activity {
       tokenField.setText("");secretField.setText("");
       draw();return;
     }
-    checking=true;message="Checking authorized Groww market-data access…";
-    tokenField.setText("");secretField.setText("");
+    startVerification(false);
+  }
+  @Override protected void onResume(){
+    super.onResume();
+    if(initialized&&secure!=null&&secure.configured()&&!checking&&
+       GrowwConnectionHealth.needsProbe(this,true))
+      startVerification(true);
+  }
+  private void startVerification(boolean automatic){
+    if(checking||secure==null||!secure.configured())return;
+    checking=true;
+    GrowwConnectionHealth.markProbe(this);
+    message=automatic?"Groww saved · automatically verifying connection…":
+      "Checking Groww market-data access…";
+    if(tokenField!=null)tokenField.setText("");
+    if(secretField!=null)secretField.setText("");
     draw();
     worker.execute(()->{
-      String issue="";
-      long lastTrade=0;
+      Throwable error=null;
       try{
         GrowwReadOnlyClient client=new GrowwReadOnlyClient(secure);
         GrowwReadOnlyClient.Market quote=client.quote("RELIANCE");
         if(!Double.isFinite(quote.price)||quote.price<=0)
           throw new IllegalStateException("No usable NSE quote");
-        lastTrade=quote.lastTradeMs;
-      }catch(SecurityException e){issue="Groww authorization rejected: check API/TOTP approval";}
-       catch(Exception e){issue="Groww connection unavailable or rate limited; retry later";}
-      final String problem=issue;final long at=lastTrade;
+        GrowwConnectionHealth.success(this);
+        GrowwConnectionHealth.marketTrade(this,quote.lastTradeMs);
+      }catch(Exception e){
+        error=e;GrowwConnectionHealth.failure(this,e);
+      }
+      final Throwable issue=error;
       main.post(()->{
         if(isFinishing()||isDestroyed())return;
         checking=false;
-        if(problem.isEmpty()){
-          getSharedPreferences("mathformula_groww_connection_v22",MODE_PRIVATE).edit()
-            .putLong("groww_verified_at_v22",System.currentTimeMillis())
-            .putLong("groww_verified_last_trade_v22",at).apply();
-          message="Groww authentication succeeded · read-only price received";
-        }else{
-          getSharedPreferences("mathformula_groww_connection_v22",MODE_PRIVATE).edit()
-            .remove("groww_verified_at_v22").apply();
-          message=problem;
-        }
+        message=issue==null?"Groww verified automatically · real read-only API response":
+          GrowwConnectionHealth.issue(this)+" · credentials retained";
         draw();
       });
     });
