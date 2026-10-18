@@ -26,7 +26,7 @@ import java.util.concurrent.Executors;
 
 /**
  * Explicit user-started, best-effort on-device session monitor.
- * Android 15 caps dataSync FGS background use at 6h per 24h. Server-side monitoring is required
+ * On Android 14+, user-started specialUse applies, subject to Android and Play restrictions. Server-side monitoring is required
  * for guaranteed uninterrupted market coverage and overnight universe discovery.
  */
 public final class ScannerService extends Service {
@@ -34,7 +34,7 @@ public final class ScannerService extends Service {
   public static final String STOP="com.mathformula.alpha.STOP_MONITOR";
   private static final String CHANNEL="alpha30_scan_v12";
   private static final ZoneId IST=ZoneId.of("Asia/Kolkata");
-  private static final long MAX_SESSION_MS=5L*60*60*1000+55L*60*1000; // 5h45m safety budget
+  private static final long MAX_SESSION_MS=6L*60*60*1000+20L*60*1000; // market session plus controlled margin
   private final Handler loop=new Handler(Looper.getMainLooper());
   private final ExecutorService work=Executors.newSingleThreadExecutor();
   private final ExecutorService radarWorker=Executors.newSingleThreadExecutor();
@@ -49,7 +49,7 @@ public final class ScannerService extends Service {
     @Override public void run(){
       if(!started)return;
       if(System.currentTimeMillis()-sessionStart>=MAX_SESSION_MS) {
-        halt("Android monitoring budget reached; server needed for uninterrupted coverage");
+        halt("Live market monitor session elapsed; reopen app to re-arm next NSE session");
         return;
       }
       if(!inMarketHours()){
@@ -128,7 +128,13 @@ public final class ScannerService extends Service {
       stopSelf();return START_NOT_STICKY;
     }
     try{
-      if(Build.VERSION.SDK_INT>=29){
+      if(Build.VERSION.SDK_INT>=34){
+        // User-visible, manually stoppable live market-monitoring session.
+        // This subtype mirrors the user's Univest/Multify apps and requires
+        // its own Play Console justification if ever publicly distributed.
+        startForeground(70,notification("Active · Groww 1m quotes / 5m checks · read-only"),
+          ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+      }else if(Build.VERSION.SDK_INT>=29){
         startForeground(70,notification("Active · Groww 1m quotes / 5m checks · read-only"),
           ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
       }else startForeground(70,notification("Active · five-minute Groww research · read-only"));
