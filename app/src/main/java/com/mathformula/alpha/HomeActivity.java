@@ -525,7 +525,7 @@ public final class HomeActivity extends AppCompatActivity {
     settings.setPadding(dp(14),dp(10),dp(14),dp(10));
     settings.setBackground(rounded(Color.WHITE));
     settings.setClickable(true);settings.setFocusable(true);
-    settings.setOnClickListener(v->startActivity(new Intent(this,MainActivity.class)));
+    settings.setOnClickListener(v->startActivity(new Intent(this,SafeSettingsActivity.class)));
     top.addView(settings);root.addView(top);
     space(20);
     TabLayout tabs=new TabLayout(this);
