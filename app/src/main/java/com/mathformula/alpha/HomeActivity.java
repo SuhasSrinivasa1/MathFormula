@@ -511,7 +511,7 @@ public final class HomeActivity extends AppCompatActivity {
     LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);
     LinearLayout brand=new LinearLayout(this);brand.setOrientation(LinearLayout.VERTICAL);
     brand.addView(text("MathFormula",27,INK,true));
-    brand.addView(text("RESEARCH DESK  /  ALPHA-30 v1.0",10,BLUE,true));
+    brand.addView(text("MAJOR RELEASE v4.0  /  REAL-DATA RESEARCH",10,BLUE,true));
     long verified=getSharedPreferences("mathformula_groww_connection_v22",MODE_PRIVATE).getLong("groww_verified_at_v22",0L);
     long since=System.currentTimeMillis()-verified;
     boolean authorized=secrets.configured()&&verified>0&&since>=0&&since<=15*60_000L;
@@ -535,12 +535,14 @@ public final class HomeActivity extends AppCompatActivity {
     tabs.setSelectedTabIndicatorHeight(dp(3));
     tabs.setTabTextColors(MUTED,BLUE);
     tabs.setBackground(rounded(Color.WHITE));
-    tabs.addTab(tabs.newTab().setText("Market watch"));
-    tabs.addTab(tabs.newTab().setText("History"));
-    if("CLOSED".equals(section))tabs.getTabAt(1).select();
+    tabs.addTab(tabs.newTab().setText("Live Trading"));
+    tabs.addTab(tabs.newTab().setText("Next Day · 3 PM"));
+    tabs.addTab(tabs.newTab().setText("Closed"));
+    if("NEXT".equals(section))tabs.getTabAt(1).select();
+    if("CLOSED".equals(section))tabs.getTabAt(2).select();
     tabs.addOnTabSelectedListener(new TabLayout.OnTabSelectedListener(){
       @Override public void onTabSelected(TabLayout.Tab tab){
-        section=tab.getPosition()==0?"LIVE":"CLOSED";render();
+        section=tab.getPosition()==0?"LIVE":tab.getPosition()==1?"NEXT":"CLOSED";render();
         if("LIVE".equals(section)){ensureFresh();refreshPrices();}
       }
       @Override public void onTabUnselected(TabLayout.Tab tab){}
@@ -1013,6 +1015,8 @@ public final class HomeActivity extends AppCompatActivity {
         discovery.lastScan()==0?"No completed research scan yet. Use Scan Tomorrow's Top 3 after hours or Scan Now during market hours.":
         "The last completed scan found no qualified technical watches. Check scan coverage and data timestamps.",12,MUTED,false));
     }
+    MajorReleaseDashboard.capGrid(this,root,live,"Live trading · cap-balanced research");
+    root.addView(text("Other sourced research records · cap or full-factor verification pending",14,INK,true));
     for(int i=0;i<live.length();i++){
       JSONObject item=live.optJSONObject(i);
       if(item!=null)stockCard(item,i+1,false);
@@ -1056,6 +1060,17 @@ public final class HomeActivity extends AppCompatActivity {
       "Only fresh server-verified 30-factor decisions may display BUY eligibility; never order automatically.":
       "GROWW-ONLY RESEARCH MODE · Broader company, catalyst, macro and execution evidence is still required before a verified BUY.",
       11,MUTED,false));
+  }
+  private void renderNextDay(){
+    JSONObject scan=discovery.latest();
+    JSONArray fromScan=scan.optJSONArray("top");
+    JSONArray candidate=serverConfigured()?(remoteConnected?remoteLive:new JSONArray()):
+      (fromScan==null?new JSONArray():fromScan);
+    if(serverConfigured()&&!remoteConnected){
+      root.addView(text("Backend connection pending · cannot validate today's 3 PM freeze",12,AMBER,true));
+    }
+    MajorReleaseDashboard.nextDay(this,root,scan,candidate);
+    root.addView(text("Live quotes and 3 PM timestamps require the actual Groww-connected scanner. Closing stock prices cannot be backfilled as a 3 PM recommendation.",11,MUTED,false));
   }
   private void renderClosed(){
     JSONArray records=serverConfigured()?(remoteConnected?remoteClosed:new JSONArray()):ledger.closed();
@@ -1112,6 +1127,7 @@ public final class HomeActivity extends AppCompatActivity {
     root.addView(export);
     space(7);
     root.addView(text("Archived observations can have gaps. These are not filled with estimated returns.",11,MUTED,false));
+    MajorReleaseDashboard.closedExtras(this,root,records);
   }
   private void render(){
     if(root==null)return;
@@ -1119,6 +1135,7 @@ public final class HomeActivity extends AppCompatActivity {
     root.removeAllViews();tabHeader();
     scanStatusCard();
     if("CLOSED".equals(section))renderClosed();
+    else if("NEXT".equals(section))renderNextDay();
     else renderLive();
     // Preserve reading position across 30-second quote/health UI refreshes.
     if(mainScroll!=null&&previousScroll>0){
@@ -1128,7 +1145,7 @@ public final class HomeActivity extends AppCompatActivity {
   private void exportLogs(){
     Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);
     intent.setType("application/zip");intent.addCategory(Intent.CATEGORY_OPENABLE);
-    intent.putExtra(Intent.EXTRA_TITLE,"MathFormula_Alpha30_"+System.currentTimeMillis()+".zip");
+    intent.putExtra(Intent.EXTRA_TITLE,"MathFormula_v4_"+System.currentTimeMillis()+".zip");
     try{startActivityForResult(intent,EXPORT);}
     catch(Exception ignored){Toast.makeText(this,"Android Files not available",Toast.LENGTH_LONG).show();}
   }
