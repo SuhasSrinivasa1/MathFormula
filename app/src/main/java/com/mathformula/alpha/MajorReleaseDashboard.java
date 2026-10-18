@@ -89,7 +89,7 @@ final class MajorReleaseDashboard {
     String today=z.toLocalDate().toString();
     boolean afterFreeze=!z.toLocalTime().isBefore(LocalTime.of(15,0));
     SharedPreferences prefs=a.getSharedPreferences(PREF,Context.MODE_PRIVATE);
-    append(a,"Next-Day Picks · 15:00 IST","Live candidate research before 15:00; once frozen, the set is immutable. A complete verified backend snapshot is required.");
+    append(a,root,"Next-Day Picks · 15:00 IST","Live candidate research before 15:00; once frozen, the set is immutable. A complete verified backend snapshot is required.");
     String storedDate=prefs.getString("freeze_date","");
     JSONArray sealed=new JSONArray();
     if(today.equals(storedDate)){
@@ -132,7 +132,7 @@ final class MajorReleaseDashboard {
     root.addView(line(a,"The official exchange calendar, post-freeze events and Monday live eligibility must be rechecked. No BUY or trade is inferred by this list.",11,AMBER,false));
   }
   static void closedExtras(Activity a,LinearLayout root,JSONArray closed){
-    append(a,"Outcome intelligence & remediation","A recorded close is not automatically a winning or losing executed trade. Only verified reference entry, exit and fees can establish P&L.");
+    append(a,root,"Outcome intelligence & remediation","A recorded close is not automatically a winning or losing executed trade. Only verified reference entry, exit and fees can establish P&L.");
     int wins=0,losses=0,unknown=0;
     for(int i=0;closed!=null&&i<closed.length();i++){
       JSONObject j=closed.optJSONObject(i);if(j==null)continue;
@@ -143,6 +143,7 @@ final class MajorReleaseDashboard {
       else unknown++;
     }
     root.addView(line(a,"Verified wins: "+wins+"  ·  Verified losses: "+losses+"  ·  Not measurable: "+unknown,13,INK,true));
+    final int verifiedLossCount=losses;
     TextView remediate=line(a,"Review losses / remediate  ↗",14,BLUE,true);
     remediate.setGravity(Gravity.CENTER);
     remediate.setPadding(20,22,20,22);
@@ -153,7 +154,7 @@ final class MajorReleaseDashboard {
       try{
         audit.put("timestampMs",t);
         audit.put("action","REMEDIATE_REQUESTED");
-        audit.put("verifiedLossCount",losses);
+        audit.put("verifiedLossCount",verifiedLossCount);
         audit.put("status","PENDING_EVIDENCE_AND_BACKEND_VALIDATION");
         audit.put("weightsChanged",false);
         audit.put("reason","A single loss cannot justify a permanent scoring change; require causal audit and out-of-sample evidence.");
