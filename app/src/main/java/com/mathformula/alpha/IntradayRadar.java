@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Phone-side read-only breadth sweep. Does not evaluate Alpha-30 BUY or invent fundamentals.
  * Uses fresh Groww batch LTP/OHLC, and only LAST completed-session cached historical references.
- * The independent server remains mandatory for guaranteed unattended NSE-wide scanning.
+ * Android JobScheduler cannot guarantee unattended full-market coverage; report all observation gaps.
  */
 final class IntradayRadar {
   private static final String PREF="mathformula_intraday_radar_v30";
@@ -105,7 +105,7 @@ final class IntradayRadar {
                  low=field(candle,"low");
           if(!(open>0&&Double.isFinite(high)&&Double.isFinite(low)&&high>=low))continue;
           double gain=100*(price/open-1);
-          if(price<25||price>15000||gain<0.25||gain>10)continue;
+          if(price<25||price>15000||gain<0.25)continue; // retain outsized moves as high-risk research, not BUY
           double location=clamp((price-low)/Math.max(.01,high-low),0,1);
           if(location<.60)continue;
           JSONObject cache;
@@ -149,7 +149,7 @@ final class IntradayRadar {
           Double.compare(b.optDouble("preliminaryRank"),a.optDouble("preliminaryRank"));
       });
       JSONArray top=new JSONArray();
-      for(int i=0;i<Math.min(12,leads.size());i++)top.put(leads.get(i));
+      for(int i=0;i<Math.min(120,leads.size());i++)top.put(leads.get(i));
       JSONObject result=new JSONObject()
         .put("session",session).put("observedMs",System.currentTimeMillis())
         .put("scannedUniverse",universe.size()).put("quotesLoaded",quotes)
