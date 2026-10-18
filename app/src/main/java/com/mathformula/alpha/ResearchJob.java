@@ -73,6 +73,13 @@ public final class ResearchJob extends JobService {
             try{discovery.refreshPriority(client);}
             catch(Exception ex){ResearchAlerts.record(this,0,
               "Priority quote refresh unavailable: "+ex.getClass().getSimpleName());}
+            if(!cancelled&&new ThreePmCapture(this).due()){
+              try{
+                new ThreePmCapture(this).capture(client,radar.currentCandidates());
+              }catch(Exception ex){
+                ResearchAlerts.record(this,0,"3 PM capture unavailable: "+ex.getClass().getSimpleName());
+              }
+            }
             if(!cancelled){
               ResearchAlerts.evaluate(this,client,discovery.latest());
               ResearchAlerts.evaluateRadar(this,client,radar);
@@ -91,6 +98,14 @@ public final class ResearchJob extends JobService {
                   "Nightly research needs retry: "+ex.getClass().getSimpleName());
               }
             }
+          }
+        }
+        if(!cancelled && growwReady && LocalDiscovery.overnightResearchWindow()){
+          try{
+            new ForecastOutcomes(this).inspectNextSession(
+              new GrowwReadOnlyClient(new SecureGrowwStore(this)));
+          }catch(Exception ignored){
+            // A failed completed-session read is NOT evidence of a winning or losing forecast.
           }
         }
       }finally{
