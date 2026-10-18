@@ -222,6 +222,7 @@ public final class SafeSettingsActivity extends Activity {
           throw new IllegalStateException("No usable NSE quote");
         GrowwConnectionHealth.success(this);
         GrowwConnectionHealth.marketTrade(this,quote.lastTradeMs);
+        new GrowwCapAuto(this).record(quote);
       }catch(Exception e){
         error=e;GrowwConnectionHealth.failure(this,e);
       }
