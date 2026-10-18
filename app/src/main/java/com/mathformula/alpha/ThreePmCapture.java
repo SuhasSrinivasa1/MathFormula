@@ -53,6 +53,7 @@ final class ThreePmCapture {
       return new JSONObject();
     }
     AmfiClassification classification=new AmfiClassification(app);
+    GrowwCapAuto caps=new GrowwCapAuto(app);
     JSONArray[] partitions={new JSONArray(),new JSONArray(),new JSONArray()};
     HashSet<String> seen=new HashSet<>();
     List<String> symbols=new ArrayList<>();
@@ -60,6 +61,7 @@ final class ThreePmCapture {
       JSONObject row=source.optJSONObject(i);if(row==null)continue;
       String symbol=row.optString("symbol","");
       String cap=classification.bucket(symbol);
+      if(cap.isEmpty())cap=caps.bucket(symbol);
       int index="SMALL".equals(cap)?0:"MID".equals(cap)?1:"LARGE".equals(cap)?2:-1;
       if(index<0||partitions[index].length()>=3||!seen.add(symbol))continue;
       symbols.add(symbol);
@@ -92,7 +94,8 @@ final class ThreePmCapture {
         .put("quotePolledMs",observed)
         .put("tradeMs",0)
         .put("amfiCap",i==0?"SMALL":i==1?"MID":"LARGE")
-        .put("capImported",true)
+        .put("capImported",!classification.bucket(symbol).isEmpty())
+        .put("capEstimated",classification.bucket(symbol).isEmpty())
         .put("capVerified",false)
         .put("signal","NO_SIGNAL")
         .put("entryEligible",false)
@@ -112,7 +115,8 @@ final class ThreePmCapture {
       .put("model",DualScoringModel.VERSION)
       .put("state",rows.length()>=5?"FROZEN PROVISIONAL · FULL SCORE PENDING":
           "FROZEN INCOMPLETE · fewer than 5 imported-cap candidates")
-      .put("capProvenance",classification.origin())
+      .put("capProvenance",classification.count()>0?classification.origin():
+        "GROWW_CURRENT_MARKET_CAP_ESTIMATE_NOT_OFFICIAL_AMFI_AVERAGE")
       .put("scannedUniverse",new IntradayRadar(app).latest().optInt("scannedUniverse",0))
       .put("radarObservedMs",new IntradayRadar(app).latest().optLong("observedMs",0))
       .put("recommendations",rows)
