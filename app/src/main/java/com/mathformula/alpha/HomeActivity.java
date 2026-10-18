@@ -1059,7 +1059,7 @@ public final class HomeActivity extends AppCompatActivity {
         discovery.lastScan()==0?"No completed research scan yet. Use Scan Tomorrow's Top 3 after hours or Scan Now during market hours.":
         "The last completed scan found no qualified technical watches. Check scan coverage and data timestamps.",12,MUTED,false));
     }
-    MajorReleaseDashboard.capGrid(this,root,live,"Live trading · cap-balanced research");
+    MajorReleaseDashboard.capGrid(this,root,capWithFactorAudit(live),"Live trading · cap-balanced research");
     root.addView(text("Other sourced research records · cap or full-factor verification pending",14,INK,true));
     for(int i=0;i<live.length();i++){
       JSONObject item=live.optJSONObject(i);
@@ -1105,6 +1105,37 @@ public final class HomeActivity extends AppCompatActivity {
       "GROWW-ONLY RESEARCH MODE · Broader company, catalyst, macro and execution evidence is still required before a verified BUY.",
       11,MUTED,false));
   }
+  private JSONArray capWithFactorAudit(JSONArray pool){
+    JSONArray enriched=new AmfiClassification(this).enrich(pool);
+    JSONArray answer=new JSONArray();
+    int small=0,mid=0,large=0;
+    DualFactorEvidence evidence=new DualFactorEvidence(this);
+    for(int i=0;enriched!=null&&i<enriched.length();i++){
+      JSONObject row=enriched.optJSONObject(i);if(row==null)continue;
+      String cap=row.optString("amfiCap","");
+      if("SMALL".equals(cap)&&small>=3)continue;
+      if("MID".equals(cap)&&mid>=3)continue;
+      if("LARGE".equals(cap)&&large>=3)continue;
+      if(cap.isEmpty())continue;
+      JSONObject report=evidence.report(row.optString("symbol",""),System.currentTimeMillis());
+      try{
+        JSONObject scored=new JSONObject(row.toString())
+          .put("alpha30FactorCount",report.optInt("alpha30FactorCount",0))
+          .put("alpha40FactorCount",report.optInt("alpha40FactorCount",0))
+          .put("alpha30CoveragePct",report.optDouble("alpha30CoveragePct",0))
+          .put("alpha40CoveragePct",report.optDouble("alpha40CoveragePct",0))
+          .put("alpha30Score",report.opt("alpha30Score"))
+          .put("alpha40Score",report.opt("alpha40Score"))
+          .put("alpha30ScoreVerified",report.optBoolean("alpha30ScoreVerified",false))
+          .put("alpha40ScoreVerified",report.optBoolean("alpha40ScoreVerified",false));
+        answer.put(scored);
+        if("SMALL".equals(cap))small++;
+        if("MID".equals(cap))mid++;
+        if("LARGE".equals(cap))large++;
+      }catch(Exception ignored){}
+    }
+    return answer;
+  }
   private void renderNextDay(){
     ThreePmCapture capture=new ThreePmCapture(this);
     JSONObject frozen=capture.latest();
@@ -1126,8 +1157,7 @@ public final class HomeActivity extends AppCompatActivity {
       radar.optInt("quotesLoaded",0)+" quotes / "+
       radar.optInt("scannedUniverse",0)+" instruments.",12,MUTED,false));
     JSONArray prelim=radar.optJSONArray("top");
-    MajorReleaseDashboard.capGrid(this,root,
-      new AmfiClassification(this).enrich(prelim),"Live 3 PM research feed");
+    MajorReleaseDashboard.capGrid(this,root,capWithFactorAudit(prelim),"Live 3 PM research feed");
     root.addView(text("An AMFI CSV import is needed to segregate candidates authoritatively. Incomplete scores remain N/A; a missing 3 PM observation cannot be recreated from EOD data.",11,AMBER,false));
   }
   private void renderClosed(){
