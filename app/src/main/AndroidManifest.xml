@@ -5,7 +5,7 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
-  <application android:label="${appLabel}" android:allowBackup="false"
+  <application android:label="${appLabel}" android:icon="@drawable/ic_mathformula_launcher" android:roundIcon="@drawable/ic_mathformula_launcher" android:allowBackup="false"
     android:usesCleartextTraffic="false" android:theme="@style/Theme.MathFormula">
     <activity android:name=".MainActivity" android:exported="false"/>
     <activity android:name=".SafeSettingsActivity" android:exported="false"/>
