@@ -218,6 +218,7 @@ public final class HomeActivity extends AppCompatActivity {
           throw new IllegalStateException("No usable Groww quote");
         GrowwConnectionHealth.success(this);
         GrowwConnectionHealth.marketTrade(this,check.lastTradeMs);
+        new GrowwCapAuto(this).record(check);
       }catch(Exception e){
         GrowwConnectionHealth.failure(this,e);
       }
@@ -409,7 +410,8 @@ public final class HomeActivity extends AppCompatActivity {
         JSONObject pick=list.optJSONObject(i);
         if(pick==null)continue;
         String symbol=pick.optString("symbol","");
-        try{latest.put(symbol,groww.quote(symbol));}
+        try{GrowwReadOnlyClient.Market quote=groww.quote(symbol);latest.put(symbol,quote);
+          new GrowwCapAuto(this).record(quote);}
         catch(Exception ignored){} // Quoted timestamp remains stale if this call fails.
       }
       discovery.applyQuoteRefresh(latest);
