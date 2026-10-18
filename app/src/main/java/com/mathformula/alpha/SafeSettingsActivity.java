@@ -150,7 +150,7 @@ public final class SafeSettingsActivity extends Activity {
     addButton("Import AMFI classification CSV",()->{
       Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);
       i.addCategory(Intent.CATEGORY_OPENABLE);
-      i.setType("text/*");
+      i.setType("*/*");
       startActivityForResult(i,REQUEST_AMFI);
     });
     rule();
