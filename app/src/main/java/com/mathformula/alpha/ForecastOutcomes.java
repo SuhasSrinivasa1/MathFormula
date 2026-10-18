@@ -46,13 +46,13 @@ final class ForecastOutcomes {
       JSONObject item=existing.optJSONObject(k);if(item!=null)
         done.add(key(item.optString("freezeDate"),item.optString("symbol")));
     }
-    int tested=0;
-    for(int h=0;h<frozenHistory.length()&&tested<2;h++){
+    int tested=0,attempted=0;
+    for(int h=0;h<frozenHistory.length()&&attempted<2;h++){
       JSONObject batch=frozenHistory.optJSONObject(h);if(batch==null)continue;
       String freezeDate=batch.optString("date","");
       JSONArray picks=batch.optJSONArray("recommendations");
       if(picks==null)continue;
-      for(int i=0;i<picks.length()&&tested<2;i++){
+      for(int i=0;i<picks.length()&&attempted<2;i++){
         JSONObject pick=picks.optJSONObject(i);if(pick==null)continue;
         String symbol=pick.optString("symbol","");
         String recordKey=key(freezeDate,symbol);
@@ -62,6 +62,7 @@ final class ForecastOutcomes {
           if(!date.isBefore(time.toLocalDate()))continue;
           double start=pick.optDouble("price",Double.NaN);
           if(!(start>0))continue;
+          attempted++;
           GrowwReadOnlyClient.NextSessionHistory bar=client.nextSessionHistory(symbol);
           LocalDate session=LocalDate.parse(bar.sessionDate);
           if(!session.isAfter(date))continue;
