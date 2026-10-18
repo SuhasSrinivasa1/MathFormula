@@ -847,15 +847,8 @@ public final class HomeActivity extends AppCompatActivity {
       }
     }
     spaceIn(c,10);
-    MaterialButton importButton=new MaterialButton(this);
-    importButton.setAllCaps(false);
-    importButton.setText("Import sourced Alpha-30 factor CSV");
-    importButton.setTextColor(Color.WHITE);importButton.setBackgroundTintList(ColorStateList.valueOf(BLUE));importButton.setCornerRadius(dp(14));
-    importButton.setOnClickListener(v->importEvidence());
-    c.addView(importButton,new LinearLayout.LayoutParams(-1,dp(48)));
-    spaceIn(c,5);
-    c.addView(text("CSV: symbol,factor,value,observed_at_utc,source · factor 1–30 · value 0–1 · timestamp in UTC/offset · HTTPS URL.",
-      11,MUTED,false));
+    c.addView(text("Factor evidence is collected internally from Groww candles and public NSE/BSE/company disclosures. No Alpha-30 CSV needs to be uploaded. Missing independently sourced fundamentals and Alpha-40 factors remain N/A.",11,MUTED,false));
+    c.addView(text("Available: Groww market quotes, 20-session price histories, close-location evidence and official public filings. Still incomplete: many normalized company, catalyst and macro factors.",11,AMBER,false));
     if(!evidenceImportNote.isEmpty()){
       spaceIn(c,4);c.addView(text(evidenceImportNote,11,AMBER,false));
     }
@@ -1158,7 +1151,7 @@ public final class HomeActivity extends AppCompatActivity {
       radar.optInt("scannedUniverse",0)+" instruments.",12,MUTED,false));
     JSONArray prelim=radar.optJSONArray("top");
     MajorReleaseDashboard.capGrid(this,root,capWithFactorAudit(prelim),"Live 3 PM research feed");
-    root.addView(text("An AMFI CSV import is needed to segregate candidates authoritatively. Incomplete scores remain N/A; a missing 3 PM observation cannot be recreated from EOD data.",11,AMBER,false));
+    root.addView(text("AMFI classifications refresh automatically from the official Excel. Missing company data or a 3 PM capture cannot be invented.",11,AMBER,false));
   }
   private void renderClosed(){
     JSONArray records=serverConfigured()?(remoteConnected?remoteClosed:new JSONArray()):ledger.closed();
