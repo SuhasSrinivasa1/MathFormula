@@ -78,12 +78,18 @@ public final class ResearchJob extends JobService {
               ResearchAlerts.evaluateRadar(this,client,radar);
             }
           }else if(LocalDiscovery.overnightResearchWindow() &&
-             !discovery.completedForCurrentEod() && !discovery.scanning() &&
-             System.currentTimeMillis()-discovery.lastAttempt()>45*60_000L){
-            try{discovery.scanForNextSession(client,progress->{});}
-            catch(Exception ex){
-              ResearchAlerts.record(this,0,
-                "Nightly research checkpoint saved: "+ex.getClass().getSimpleName());
+             !discovery.completedForCurrentEod() && !discovery.scanning()){
+            boolean paused=discovery.lastAttemptState().startsWith("PAUSED")||
+              discovery.lastAttemptState().startsWith("INTERRUPTED");
+            long gap=paused?12*60_000L:45*60_000L;
+            if(System.currentTimeMillis()-discovery.lastAttempt()>gap){
+              try{discovery.scanForNextSession(client,progress->{});}
+              catch(Exception ex){
+                ResearchAlerts.record(this,0,
+                  ex instanceof InterruptedException?
+                  "Nightly history paused by Android; saved checkpoints will resume":
+                  "Nightly research needs retry: "+ex.getClass().getSimpleName());
+              }
             }
           }
         }
