@@ -42,6 +42,14 @@ public final class ResearchJob extends JobService {
     // Official filing RSS collection is useful even outside the Groww research window.
     worker.execute(()->{
       try{
+        // AMFI classification is a direct official Excel download, not a user CSV.
+        // Failure never erases a previously stored official AMFI categorization.
+        OfficialAmfiUpdater amfi=new OfficialAmfiUpdater(this);
+        if(!cancelled&&amfi.due()){
+          try{amfi.sync();}
+          catch(Exception ex){ResearchAlerts.record(this,0,
+            "Official AMFI classification refresh pending: "+ex.getClass().getSimpleName());}
+        }
         // Public filing metadata collection is independent of broker tokens; on-device only.
         new OfficialNseFeed(this).refresh();
         if(!cancelled)new OfficialFinancialCollector(this).refresh();
