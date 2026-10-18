@@ -25,7 +25,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Defensive Android-native settings screen for the v4.0.1 hotfix.
+ * Defensive Android-native settings screen for the v4.0.2 hotfix.
  * All credentials remain in the existing AndroidKeystore-backed SecureGrowwStore.
  * Does not place orders, simulate trades, or calculate missing Alpha scores.
  * Does not instantiate Material widgets or research engines during initialization.
@@ -39,7 +39,7 @@ public final class SafeSettingsActivity extends Activity {
   private final Handler main=new Handler(Looper.getMainLooper());
   private final ExecutorService worker=Executors.newSingleThreadExecutor();
   private LinearLayout content;
-  private EditText tokenField,secretField,urlField,viewerField;
+  private EditText tokenField,secretField,webSearchField;
   private SecureGrowwStore secure;
   private String message="Ready to connect your Groww read-only market-data account";
   private boolean checking=false;
@@ -98,14 +98,10 @@ public final class SafeSettingsActivity extends Activity {
     }catch(RuntimeException exception){
       initialized=false;
       content.removeAllViews();
-      content.addView(label("MathFormula v4.0.1 · Settings recovery",22,NAVY,true));
+      content.addView(label("MathFormula v4.0.2 · Settings recovery",22,NAVY,true));
       content.addView(label("The Android Keystore could not initialize. No credentials were erased. Restart your phone and reopen Settings, or export a crash log for diagnosis.",14,AMBER,false));
       addButton("Return to MathFormula",this::finish);
     }
-  }
-  private String backend(){
-    return getSharedPreferences("mathformula_shared_runtime_v30",MODE_PRIVATE)
-      .getString("server_url","");
   }
   private void draw(){
     if(!initialized||content==null)return;
@@ -123,13 +119,17 @@ public final class SafeSettingsActivity extends Activity {
     addButton("Save encrypted credentials",()->saveCredentials(false));
     addButton(checking?"Checking Groww…":"Verify Groww market-data access",()->saveCredentials(true));
     rule();
-    heading("Independent NSE scanner");
-    content.addView(label("The full Alpha-40 model, off-hours 15:00 freeze and audit workflow require a deployed HTTPS scanner. Groww market quotes alone do not supply all factors.",12,MUTED,false));
-    urlField=field("https://scanner.example.com",false);
-    urlField.setText(backend());
-    viewerField=field("Scanner viewer token · leave blank if saved",true);
-    content.addView(urlField);content.addView(viewerField);
-    addButton("Save scanner configuration",this::saveBackend);
+    heading("Market data & public research");
+    content.addView(label("NSE cash quotes, historical candles and instrument discovery: Groww Trade API. Company filings and fundamentals: official NSE, BSE and issuer publications. Macro, sectors and global catalysts: dated public internet sources.",12,MUTED,false));
+    content.addView(label("Automatic full-universe scanning on this phone is subject to Groww account rate limits and Android background restrictions. A complete Alpha-40 score is shown only when all required evidence has been verified.",12,AMBER,false));
+    rule();
+    heading("Optional wider internet search");
+    InternetResearchEngine research=new InternetResearchEngine(this);
+    content.addView(label("Official public NSE sources do not require a separate search key. For broader web discovery, you may add your own Brave Search API key (optional). Search results are not automatically accepted as financial facts.",12,MUTED,false));
+    content.addView(label("Internet research: "+research.status(),12,MUTED,false));
+    webSearchField=field("Optional Brave Search API key · leave blank to keep",true);
+    content.addView(webSearchField);
+    addButton("Save optional search key",this::saveWebSearch);
     rule();
     heading("Diagnostics and notifications");
     content.addView(label(ResearchAlerts.permission(this)?
@@ -205,28 +205,22 @@ public final class SafeSettingsActivity extends Activity {
       });
     });
   }
-  private void saveBackend(){
-    String raw=urlField.getText().toString().trim().replaceAll("/+$","");
-    String token=viewerField.getText().toString().trim();
+  private void saveWebSearch(){
+    String key=webSearchField.getText().toString().trim();
+    if(key.isEmpty()){
+      message="No change; public official internet sources remain accessible.";
+      draw();return;
+    }
+    if(key.length()<16||key.length()>512){
+      Toast.makeText(this,"Search API key must contain 16 to 512 characters",Toast.LENGTH_LONG).show();
+      return;
+    }
     try{
-      if(!raw.isEmpty()){
-        URL parsed=new URL(raw);
-        if(!"https".equalsIgnoreCase(parsed.getProtocol()) || parsed.getHost().isEmpty()||
-          parsed.getUserInfo()!=null||(!parsed.getPath().isEmpty()&&!"/".equals(parsed.getPath()))||
-          parsed.getQuery()!=null||parsed.getRef()!=null)
-          throw new IllegalArgumentException("Invalid HTTPS origin");
-        String effective=token.isEmpty()?secure.get("server_viewer_token"):token;
-        if(effective.length()<32)throw new IllegalArgumentException("Scanner token too short");
-        new BackendReadOnlyClient(raw,effective);
-      }
-      if(!token.isEmpty())secure.put("server_viewer_token",token);
-      getSharedPreferences("mathformula_shared_runtime_v30",MODE_PRIVATE).edit()
-        .putString("server_url",raw).apply();
-      message=raw.isEmpty()?"Scanner connection removed":"HTTPS scanner settings saved (connection not yet verified)";
+      secure.put("web_search_api_key",key);
+      message="Optional search key encrypted; official NSE research remains available without it.";
       draw();
-    }catch(Exception error){
-      message="Scanner requires an HTTPS domain and a 32+ character viewer token";
-      Toast.makeText(this,message,Toast.LENGTH_LONG).show();
+    }catch(RuntimeException ex){
+      Toast.makeText(this,"Could not securely store search key",Toast.LENGTH_LONG).show();
     }
   }
   private void exportLogs(){
@@ -243,7 +237,7 @@ public final class SafeSettingsActivity extends Activity {
       String issue=null;
       try{
         DiagnosticExporter.save(getApplicationContext(),uri,new WatchStore(this),
-          new ArrayList<String>(),backend(),secure.get("server_viewer_token"));
+          new ArrayList<String>(),"","");
       }catch(Exception e){issue=e.getClass().getSimpleName();}
       final String problem=issue;
       main.post(()->{
