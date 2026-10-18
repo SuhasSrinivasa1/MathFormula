@@ -52,6 +52,14 @@ public final class ResearchJob extends JobService {
           if(research.due())
             research.refresh(new LocalDiscovery(this).priorityWatchlist());
         }
+        if(!cancelled && growwReady && LocalDiscovery.overnightResearchWindow()){
+          try{
+            new ForecastOutcomes(this).inspectNextSession(
+              new GrowwReadOnlyClient(new SecureGrowwStore(this)));
+          }catch(Exception ignored){
+            // A failed completed-session read is NOT evidence of a winning or losing forecast.
+          }
+        }
         if(!cancelled && growwReady &&
            (MarketSchedule.weekdayTradingTime(System.currentTimeMillis())||
             LocalDiscovery.overnightResearchWindow())){
@@ -98,14 +106,6 @@ public final class ResearchJob extends JobService {
                   "Nightly research needs retry: "+ex.getClass().getSimpleName());
               }
             }
-          }
-        }
-        if(!cancelled && growwReady && LocalDiscovery.overnightResearchWindow()){
-          try{
-            new ForecastOutcomes(this).inspectNextSession(
-              new GrowwReadOnlyClient(new SecureGrowwStore(this)));
-          }catch(Exception ignored){
-            // A failed completed-session read is NOT evidence of a winning or losing forecast.
           }
         }
       }finally{
