@@ -80,6 +80,34 @@ final class AmfiClassification {
       .putLong("importedAtMs",System.currentTimeMillis()).apply();
     classifications=map;return map.size();
   }
+  /** Trusted official AMFI publication downloaded directly by the application. */
+  synchronized int replaceOfficial(Map<String,String> fresh,String officialUrl,String edition)throws Exception{
+    if(fresh==null||fresh.size()<251 || officialUrl==null ||
+       !officialUrl.startsWith("https://portal.amfiindia.com/spages/") ||
+       !officialUrl.toLowerCase(Locale.US).endsWith(".xlsx"))
+      throw new IllegalArgumentException("AMFI official publication incomplete or untrusted");
+    int large=0,mid=0,small=0;
+    JSONObject rows=new JSONObject();
+    for(Map.Entry<String,String> e:fresh.entrySet()){
+      String symbol=e.getKey()==null?"":e.getKey().trim().toUpperCase(Locale.US);
+      String group=canonical(e.getValue()==null?"":e.getValue());
+      if(!symbol.matches("[A-Z0-9&-]{1,26}")||group.isEmpty())continue;
+      rows.put(symbol,group);
+      if("LARGE".equals(group))large++;
+      else if("MID".equals(group))mid++;
+      else small++;
+    }
+    if(large<90||mid<135||small<100)
+      throw new IllegalArgumentException("Official AMFI category counts are not credible");
+    boolean saved=prefs.edit().putString("rows",rows.toString())
+      .putString("origin","OFFICIAL_AMFI_DIRECT_DOWNLOAD")
+      .putString("description",edition)
+      .putString("officialUrl",officialUrl)
+      .putLong("importedAtMs",System.currentTimeMillis()).commit();
+    if(!saved)throw new IllegalStateException("Cannot save official AMFI categorization");
+    classifications=null;return rows.length();
+  }
+  String officialUrl(){return prefs.getString("officialUrl","");}
   private Map<String,String> all(){
     if(classifications!=null)return classifications;
     classifications=new HashMap<>();
@@ -98,7 +126,10 @@ final class AmfiClassification {
   JSONObject audit(){
     JSONObject j=new JSONObject();
     try{j.put("classificationRows",count()).put("source",origin())
-      .put("importedAtMs",importedAt()).put("sourceAuthenticity","USER_SUPPLIED_NOT_VERIFIED");}
+      .put("importedAtMs",importedAt())
+      .put("officialUrl",officialUrl())
+      .put("sourceAuthenticity","OFFICIAL_AMFI_DIRECT_DOWNLOAD".equals(origin())?
+        "OFFICIAL_PUBLISHER_HOST_VERIFIED":"USER_SUPPLIED_NOT_VERIFIED");}
     catch(Exception ignored){}
     return j;
   }
@@ -111,9 +142,11 @@ final class AmfiClassification {
         String bucket=bucket(v.optString("symbol",""));
         if(!bucket.isEmpty()){
           v.put("amfiCap",bucket);
-          v.put("capImported",true);
-          v.put("capVerified",false); // User-supplied file provenance cannot be independently authenticated.
-          v.put("capSource","AMFI CSV user-imported, unverified");
+          boolean official="OFFICIAL_AMFI_DIRECT_DOWNLOAD".equals(origin());
+          v.put("capImported",!official);
+          v.put("capVerified",official);
+          v.put("capSource",official?"AMFI official spreadsheet "+officialUrl():
+            "AMFI CSV user-imported, unauthenticated");
         }
         out.put(v);
       }catch(Exception ignored){}
