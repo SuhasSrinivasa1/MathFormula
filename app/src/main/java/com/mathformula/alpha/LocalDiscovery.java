@@ -424,7 +424,7 @@ final class LocalDiscovery {
     List<String> stocks=new ArrayList<>();
     seriesBySymbol.clear();
     Set<String> unique=new HashSet<>();
-    int nseCash=0,excludedNonEquity=0,excludedSeries=0,missingSymbol=0;
+    int nseCash=0,excludedNonEquity=0,excludedSeries=0,excludedFunds=0,missingSymbol=0;
     Map<String,Integer> acceptedSeries=new TreeMap<>();
     try(BufferedReader reader=new BufferedReader(new InputStreamReader(
         new FileInputStream(file),StandardCharsets.UTF_8))){
@@ -434,7 +434,8 @@ final class LocalDiscovery {
       List<String> keys=csv(head);
       int ex=column(keys,"exchange"),seg=column(keys,"segment"),
          series=column(keys,"series"),kind=column(keys,"instrument_type"),
-         symbol=column(keys,"trading_symbol");
+         symbol=column(keys,"trading_symbol"),isin=column(keys,"isin"),
+         instrumentName=column(keys,"name");
       if(ex<0||seg<0||series<0||symbol<0)throw new IOException("Groww instrument file schema changed");
       String line;
       while((line=reader.readLine())!=null){
@@ -453,6 +454,15 @@ final class LocalDiscovery {
         }
         String s=row.get(symbol).trim().toUpperCase(Locale.US);
         if(!s.matches("[A-Z0-9&-]{1,26}")){missingSymbol++;continue;}
+        String securitiesIsin=isin>=0&&isin<row.size()?row.get(isin).trim().toUpperCase(Locale.US):"";
+        String label=instrumentName>=0&&instrumentName<row.size()?
+          row.get(instrumentName).trim().toUpperCase(Locale.US):"";
+        // Exclude ETF/mutual fund ISINs, even when the series is EQ.
+        boolean isFund=securitiesIsin.startsWith("INF")||
+          s.endsWith("BEES")||s.endsWith("ETF")||
+          label.contains(" ETF ")||label.startsWith("ETF ")||label.endsWith(" ETF")||
+          label.contains("EXCHANGE TRADED FUND")||label.contains("EXCHANGE-TRADED FUND");
+        if(isFund){excludedFunds++;continue;}
         if(unique.add(s)){
           stocks.add(s);seriesBySymbol.put(s,ser);
           acceptedSeries.put(ser,acceptedSeries.getOrDefault(ser,0)+1);
@@ -469,7 +479,7 @@ final class LocalDiscovery {
       .put("nseCashInstrumentRows",nseCash)
       .put("eligibleUniqueEquities",stocks.size())
       .put("excludedNonEquityRows",excludedNonEquity)
-      .put("excludedSeriesRows",excludedSeries)
+      .put("excludedSeriesRows",excludedSeries).put("excludedFundsAndEtfs",excludedFunds)
       .put("invalidSymbolRows",missingSymbol)
       .put("eligibleSeries",seriesJson)
       .put("note","Count comes from Groww NSE CASH equity instrument master; no artificial 4,000 target.");
@@ -606,7 +616,7 @@ final class LocalDiscovery {
       }
       prefs.edit().putString("preliminary",new JSONObject()
         .put("atMs",System.currentTimeMillis()).put("eligibleUniverse",universe.size())
-        .put("quotesLoaded",prices.size()).put("broadCandidates",broad.size())
+        .put("quotesLoaded",broadCacheUsed?prefs.getInt("overnightQuotedCount",0):prices.size()).put("broadCandidates",broad.size())
         .put("stage","Historical verification in progress")
         .put("top",preliminary).toString()).apply();
       int toVerify=broad.size();int checked=0,valid=0;
@@ -729,6 +739,9 @@ final class LocalDiscovery {
             throw invalid;
           }
           countFailure(rejectionReasons,code);
+          if("HISTORY_API_OR_PARSE_ERROR".equals(code))
+            new WatchStore(app).audit("EOD_HISTORY",b.symbol,"CHECK","REJECTED",
+              code+" · "+invalid.getClass().getSimpleName(),0);
         }finally{
           if(afterHours&&!retryLater){
             JSONObject entry=new JSONObject();
@@ -802,7 +815,18 @@ final class LocalDiscovery {
          .put("top",top);
       save(result);
       return result;
-    }catch(Exception ex){failure(ex.getMessage());throw ex;}
+    }catch(Exception ex){
+       if(ex instanceof InterruptedException||Thread.currentThread().isInterrupted()){
+         JSONObject checkpoint=inProgress();
+         String reason="PAUSED · Android interrupted background research at "+
+           checkpoint.optInt("checked",0)+"/"+checkpoint.optInt("total",0)+
+           " history checks. Resumable checkpoints retained.";
+         prefs.edit().putString("lastAttemptState",reason).putString("lastError","").apply();
+         new WatchStore(app).audit("DISCOVERY","UNIVERSE","RUNNING","PAUSED",reason,0);
+         Thread.currentThread().interrupt();
+       }else failure(ex.getMessage()==null?ex.getClass().getSimpleName():ex.getMessage());
+       throw ex;
+     }
      finally{RUNNING.set(false);}
   }
 }
