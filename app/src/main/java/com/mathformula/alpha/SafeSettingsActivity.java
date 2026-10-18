@@ -39,6 +39,7 @@ public final class SafeSettingsActivity extends Activity {
 
   private final Handler main=new Handler(Looper.getMainLooper());
   private final ExecutorService worker=Executors.newSingleThreadExecutor();
+  private final ExecutorService amfiWorker=Executors.newSingleThreadExecutor();
   private LinearLayout content;
   private EditText tokenField,secretField,webSearchField;
   private SecureGrowwStore secure;
@@ -248,7 +249,7 @@ public final class SafeSettingsActivity extends Activity {
     OfficialAmfiUpdater upd=new OfficialAmfiUpdater(this);
     if(!force&&!upd.due())return;
     amfiBusy=true;
-    worker.execute(()->{
+    amfiWorker.execute(()->{
       String report;
       try{
         int count=new OfficialAmfiUpdater(this).sync();
@@ -346,6 +347,6 @@ public final class SafeSettingsActivity extends Activity {
     });
   }
   @Override protected void onDestroy(){
-    worker.shutdownNow();super.onDestroy();
+    worker.shutdownNow();amfiWorker.shutdownNow();super.onDestroy();
   }
 }
