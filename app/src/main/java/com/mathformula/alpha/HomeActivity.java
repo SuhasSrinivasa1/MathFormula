@@ -67,12 +67,14 @@ public final class HomeActivity extends AppCompatActivity {
   private long lastQuoteAttempt=0,lastAlertAttempt=0;
   private boolean startedWhileOpen=false;
   private String lastVisibleDate="";
+  private volatile boolean freezeBusy=false;
   private final Runnable autoUpdate=new Runnable(){
     @Override public void run(){
       boolean open=MarketSchedule.weekdayTradingTime(System.currentTimeMillis());
       // Keep the user's selected section. Closing bell does not close a valid research watch.
       startedWhileOpen=open;
       ensureGrowwAccessIfDue();
+      captureThreePmIfDue();
       if(serverConfigured())fetchRemote();
       else if(open){
         // Intraday universe quotes must be independently refreshed; EOD history stays frozen.
@@ -187,6 +189,24 @@ public final class HomeActivity extends AppCompatActivity {
   }
   @Override protected void onPause(){handler.removeCallbacks(autoUpdate);super.onPause();}
   @Override protected void onDestroy(){worker.shutdownNow();authWorker.shutdownNow();super.onDestroy();}
+  private void captureThreePmIfDue(){
+    if(freezeBusy||!secrets.configured())return;
+    ThreePmCapture capture=new ThreePmCapture(this);
+    if(!capture.due())return;
+    freezeBusy=true;
+    worker.execute(()->{
+      try{
+        IntradayRadar radar=new IntradayRadar(this);
+        JSONArray candidates=radar.currentCandidates();
+        capture.capture(groww,candidates);
+      }catch(Exception e){
+        new WatchStore(this).audit("NEXT_DAY_FREEZE","NSE","DUE","FAILED",
+          "Observed 15:00 capture unavailable · "+e.getClass().getSimpleName(),0);
+      }finally{
+        handler.post(()->{freezeBusy=false;if(!isFinishing()&&!isDestroyed())render();});
+      }
+    });
+  }
   private void ensureGrowwAccessIfDue(){
     if(secrets==null||growwProbeBusy||!GrowwConnectionHealth.needsProbe(this,secrets.configured()))return;
     growwProbeBusy=true;
@@ -1086,15 +1106,29 @@ public final class HomeActivity extends AppCompatActivity {
       11,MUTED,false));
   }
   private void renderNextDay(){
-    JSONObject scan=discovery.latest();
-    JSONArray fromScan=scan.optJSONArray("top");
-    JSONArray candidate=serverConfigured()?(remoteConnected?remoteLive:new JSONArray()):
-      (fromScan==null?new JSONArray():fromScan);
-    if(serverConfigured()&&!remoteConnected){
-      root.addView(text("Backend connection pending · cannot validate today's 3 PM freeze",12,AMBER,true));
+    ThreePmCapture capture=new ThreePmCapture(this);
+    JSONObject frozen=capture.latest();
+    root.addView(text("Tomorrow · frozen 3 PM research",22,INK,true));space(6);
+    root.addView(text("Point-in-time Groww LTP capture at 15:00–15:02 IST when this phone is allowed to run. This is NOT a guaranteed service or a verified BUY.",12,MUTED,false));space(9);
+    if(frozen.length()>0){
+      root.addView(text(frozen.optString("date","")+" · "+frozen.optString("state",""),
+        14,BLUE,true));space(7);
+      MajorReleaseDashboard.capGrid(this,root,frozen.optJSONArray("recommendations"),
+        "Immutable observed next-session records");
+    }else{
+      root.addView(text("No sealed 3 PM observation available · "+capture.status(),12,AMBER,true));
     }
-    MajorReleaseDashboard.nextDay(this,root,scan,candidate);
-    root.addView(text("3 PM observations must come from fresh Groww quotes and timestamped sources. Closing prices cannot be backfilled as an earlier 3 PM recommendation. Keep the phone scanner running before the freeze.",11,MUTED,false));
+    space(12);
+    JSONObject radar=intradayRadar.latest();
+    root.addView(text("Live candidates before 3 PM",17,INK,true));
+    root.addView(text("Groww breadth snapshot "+
+      time(radar.optLong("observedMs",0))+" · "+
+      radar.optInt("quotesLoaded",0)+" quotes / "+
+      radar.optInt("scannedUniverse",0)+" instruments.",12,MUTED,false));
+    JSONArray prelim=radar.optJSONArray("top");
+    MajorReleaseDashboard.capGrid(this,root,
+      new AmfiClassification(this).enrich(prelim),"Live 3 PM research feed");
+    root.addView(text("An AMFI CSV import is needed to segregate candidates authoritatively. Incomplete scores remain N/A; a missing 3 PM observation cannot be recreated from EOD data.",11,AMBER,false));
   }
   private void renderClosed(){
     JSONArray records=serverConfigured()?(remoteConnected?remoteClosed:new JSONArray()):ledger.closed();
