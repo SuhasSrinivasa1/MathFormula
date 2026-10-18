@@ -206,6 +206,7 @@ public final class ScannerService extends Service {
       for(String symbol:symbols){
         try{
           GrowwReadOnlyClient.Market m=client.quote(symbol);
+        new GrowwCapAuto(this).record(m);
           org.json.JSONObject prior=store.get(symbol);
           if(fullFive || !prior.has("reference")){
             try{client.dailyReference(m);}catch(Exception ex){m.note="Daily reference unavailable";}
