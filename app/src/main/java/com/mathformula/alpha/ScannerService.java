@@ -104,7 +104,7 @@ public final class ScannerService extends Service {
     return new Notification.Builder(this,CHANNEL)
       .setContentTitle("MathFormula · local NSE monitoring")
       .setContentText(caption)
-      .setSmallIcon(android.R.drawable.ic_menu_view)
+      .setSmallIcon(R.drawable.ic_mathformula_status)
       .setContentIntent(pi).setOngoing(true).setOnlyAlertOnce(true)
       .setCategory(Notification.CATEGORY_SERVICE)
       .setShowWhen(true).build();
