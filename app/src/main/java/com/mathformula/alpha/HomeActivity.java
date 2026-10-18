@@ -605,7 +605,7 @@ public final class HomeActivity extends AppCompatActivity {
       .getLong("heartbeat_ms",0);
     boolean heartbeatFresh=beat>0&&System.currentTimeMillis()-beat<150_000L;
     String scanner=serverConfigured()?remoteConnected?"SERVER":"SERVER DOWN":
-      heartbeatFresh?"ACTIVE":intradayRadar.fresh()?"RADAR FRESH":"PAUSED";
+      !open()?"OFF-MARKET":heartbeatFresh?"ACTIVE":intradayRadar.fresh()?"RADAR FRESH":"PAUSED";
     String alerts=!ResearchAlerts.permission(this)?"BLOCKED":"ON PHONE";
     String[] labels={"MARKET","GROWW","SCANNER","ALERTS"};
     String[] values={market,growwState,scanner,alerts};
@@ -624,9 +624,22 @@ public final class HomeActivity extends AppCompatActivity {
       .getLong("heartbeat_ms",0L);
     String localState=getSharedPreferences("mathformula_local_monitor_v32",MODE_PRIVATE)
       .getString("monitoring_state","NOT STARTED");
-    root.addView(text("Phone monitor: "+localState+" · last heartbeat "+
-      time(latestBeat)+" · Android/Vivo may stop background execution.",
-      11,latestBeat>0&&System.currentTimeMillis()-latestBeat<150_000L?GREEN:AMBER,false));
+    long lastResearch=getSharedPreferences("mathformula_research_heartbeat_v42",MODE_PRIVATE)
+      .getLong("lastFinishedMs",0L);
+    boolean monitorAlive=latestBeat>0&&System.currentTimeMillis()-latestBeat<150_000L;
+    root.addView(text(!open()?
+      "Live NSE monitor: MARKET CLOSED · intentionally idle (not a connection failure)":
+      "Live NSE monitor: "+(monitorAlive?"ACTIVE · 1m heartbeat":
+       localState+" · open Settings to start/verify background access"),
+      11,open()&&!monitorAlive?AMBER:monitorAlive?GREEN:MUTED,false));
+    root.addView(text("Off-market research: Android scheduled job · last completed "+
+      time(lastResearch)+". App work can be delayed or restricted by Vivo.",
+      11,MUTED,false));
+    if(open()){
+      root.addView(text("Last live heartbeat: "+time(latestBeat)+
+        " · an ongoing notification is shown only while the foreground service is active.",
+        10,MUTED,false));
+    }
     space(14);
   }
   private void summaryCard(JSONObject scan,boolean closed){
