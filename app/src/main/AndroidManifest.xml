@@ -3,6 +3,7 @@
   <uses-permission android:name="android.permission.INTERNET"/>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
   <application android:label="${appLabel}" android:icon="@drawable/ic_mathformula_launcher" android:roundIcon="@drawable/ic_mathformula_launcher" android:allowBackup="false"
@@ -22,6 +23,9 @@
     <service android:name=".ResearchJob" android:exported="true"
       android:permission="android.permission.BIND_JOB_SERVICE"/>
     <service android:name=".ScannerService" android:exported="false"
-       android:foregroundServiceType="dataSync" android:stopWithTask="false"/>
+       android:foregroundServiceType="specialUse|dataSync" android:stopWithTask="false">
+      <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="User-initiated live NSE research monitoring with Groww read-only market data, persistent progress and breakout notifications. The user can stop it at any time."/>
+    </service>
   </application>
 </manifest>
