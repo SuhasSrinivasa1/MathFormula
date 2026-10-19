@@ -75,7 +75,7 @@ final class DiagnosticExporter {
   }
   static JSONObject manifest(Context ctx,boolean hasServer,String status,int obsLines,int auditLines) throws Exception{
     JSONObject manifest=new JSONObject();
-    manifest.put("exportSchema","MathFormula-diagnostic-v4.1");
+    manifest.put("exportSchema","MathFormula-diagnostic-v4.4");
     String appVersion="unknown";
     try{appVersion=ctx.getPackageManager().getPackageInfo(ctx.getPackageName(),0).versionName;}
     catch(Exception ignored){}
@@ -150,6 +150,10 @@ final class DiagnosticExporter {
           .put("normalTradingSeries","EQ")
           .put("legacyHistoryPreserved",true)
           .put("historicalCandleWindowDays",365)
+          .put("quoteFreshnessGateMs",10000)
+          .put("staleWatchRescanDelayMs",300000)
+          .put("growwRateLimitPause","30min on provider 429; no local repeat request during cooldown")
+          .put("marketCapParsing","Positive numbers or explicit rupee units only, no guessed buckets")
           .put("historicQuota",GrowwQuota.policy().getInt("historicalInternalRequestsPerMinute"));
         entry(zip,"nse_regular_session_calendar_and_research_policy.json",calendarAudit.toString(2));
         entry(zip,"three_pm_freeze_audit.json",new ThreePmCapture(ctx).audit().toString(2));
