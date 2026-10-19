@@ -140,6 +140,18 @@ final class DiagnosticExporter {
         entry(zip,"intraday_breadth_coverage.json",radar.toString(2));
         entry(zip,"amfi_classification_audit.json",new AmfiClassification(ctx).audit().toString(2));
         entry(zip,"groww_automatic_cap_audit.json",new GrowwCapAuto(ctx).audit().toString(2));
+        JSONObject calendarAudit=new JSONObject()
+          .put("source",NseEquityCalendar.SOURCE)
+          .put("version",NseEquityCalendar.VERSION)
+          .put("todaySession",NseEquityCalendar.sessionAvailability(
+            java.time.LocalDate.now(MarketSchedule.IST)))
+          .put("nextSession",NseEquityCalendar.nextOrUnavailable(
+            java.time.LocalDate.now(MarketSchedule.IST)))
+          .put("normalTradingSeries","EQ")
+          .put("legacyHistoryPreserved",true)
+          .put("historicalCandleWindowDays",175)
+          .put("historicQuota",GrowwQuota.policy().getInt("historicalInternalRequestsPerMinute"));
+        entry(zip,"nse_regular_session_calendar_and_research_policy.json",calendarAudit.toString(2));
         entry(zip,"three_pm_freeze_audit.json",new ThreePmCapture(ctx).audit().toString(2));
         entry(zip,"next_session_outcome_audit.json",new ForecastOutcomes(ctx).audit().toString(2));
         JSONArray pool=discovery.latest().optJSONArray("verifiedTechnicalPool");
