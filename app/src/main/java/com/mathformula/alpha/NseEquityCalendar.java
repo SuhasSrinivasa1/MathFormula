@@ -44,6 +44,10 @@ final class NseEquityCalendar {
       if(session(candidate))return candidate;
     throw new IllegalStateException("Unable to resolve next NSE regular trading date");
   }
+  static String nextOrUnavailable(LocalDate day){
+    try{return next(day).toString();}
+    catch(Exception e){return "UNAVAILABLE · verified exchange calendar must be updated";}
+  }
   static String sessionAvailability(LocalDate day){
     if(!supported(day))return "CALENDAR_NOT_VERIFIED_FOR_YEAR";
     return session(day)?"OPEN_REGULAR_SESSION":"CLOSED_HOLIDAY_OR_WEEKEND";
