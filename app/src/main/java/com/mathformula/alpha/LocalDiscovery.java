@@ -118,7 +118,7 @@ final class LocalDiscovery {
       z.toLocalDate().minusDays(1):z.toLocalDate();
     return NseEquityCalendar.previous(day).toString();
   }
-  private GrowwReadOnlyClient.NextSessionHistory historyCached(GrowwReadOnlyClient api,
+  GrowwReadOnlyClient.NextSessionHistory historyCached(GrowwReadOnlyClient api,
                                                                 String symbol) throws Exception{
     String cutoff=cacheCutoffDate();
     try{
