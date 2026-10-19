@@ -68,9 +68,18 @@ public final class ScannerService extends Service {
             "Open MathFormula and tap Start background to renew the Android monitoring session.");
         }
       }
-      status("FOREGROUND_ACTIVE");
-      if(!busy)fetchCycle();
-      startRadarWhenDue();
+      long cooldown=GrowwQuota.cooldownRemainingMs(ScannerService.this);
+      if(cooldown>0){
+        status("GROWW_COOLDOWN_PAUSED");
+        GrowwQuota.skippedCycle(ScannerService.this);
+        NotificationManager manager=getSystemService(NotificationManager.class);
+        if(manager!=null)manager.notify(70,notification("Groww pause "+
+          ((cooldown+59_999)/60_000)+" min · scanner sleeping, no API calls"));
+      }else{
+        status("FOREGROUND_ACTIVE");
+        if(!busy)fetchCycle();
+        startRadarWhenDue();
+      }
       // Monitored-symbol quotes every minute; completed-candle checks every five minutes.
       long now=System.currentTimeMillis(), interval=60000L;
       long delay=interval-(now%interval)+3000L;
@@ -182,7 +191,7 @@ public final class ScannerService extends Service {
   /** Dynamically discover fresh movers even when the Market activity has been closed. */
   private void startRadarWhenDue(){
     final IntradayRadar radar=new IntradayRadar(this);
-    if(radarBusy||!radar.due())return;
+    if(radarBusy||!radar.due()||GrowwQuota.cooling(this))return;
     radarBusy=true;
     radarWorker.execute(()->{
       try {
@@ -199,12 +208,24 @@ public final class ScannerService extends Service {
     });
   }
   private void fetchCycle(){
+    if(GrowwQuota.cooling(this))return;
     busy=true;work.execute(()->{
       try{
       List<String> symbols=watchlist();
       boolean fullFive=java.time.ZonedDateTime.now(IST).getMinute()%5==0;int success=0;String lastFailure="";
       long now=System.currentTimeMillis();
       for(String symbol:symbols){
+        if(GrowwQuota.cooling(this)){
+          lastFailure="GROWW_RATE_LIMIT_PAUSED";break;
+        }
+        // Inactive exchange timestamps are not live signals.
+        // Defer subsequent requests on persistently stale names by five minutes.
+        org.json.JSONObject existing=store.get(symbol);
+        long previousPoll=existing.optLong("polledAt",0L);
+        long oldTrade=existing.optLong("tradeMs",0L);
+        boolean stalePreviously=WatchState.STALE.equals(existing.optString("stage",""));
+        if(stalePreviously&&previousPoll>0&&now-previousPoll<5*60_000L&&
+           (oldTrade<=0||now-oldTrade>60_000L))continue;
         try{
           GrowwReadOnlyClient.Market m=client.quote(symbol);
         new GrowwCapAuto(this).record(m);
@@ -238,6 +259,12 @@ public final class ScannerService extends Service {
           // The shared ResearchAlerts notifier handles deduplication and accurate labels.
           success++;
         }catch(Exception ex){
+          if(GrowwQuota.cooling(this)){
+            lastFailure="GROWW_RATE_LIMIT_PAUSED";
+            store.audit("MONITOR","SESSION","ACTIVE","GROWW_PAUSED",
+              "Provider 429 cooldown active; remaining symbols deferred",0);
+            break;
+          }
           lastFailure=symbol+": "+(ex.getMessage()==null?"Groww unavailable":ex.getMessage());
           store.audit("ERROR",symbol,"","FETCH FAILED",lastFailure,0);
         }
@@ -260,7 +287,8 @@ public final class ScannerService extends Service {
       }
       store.recordScan(okay,okay?"":lastFailure,success);
       recentQuotes=success;
-      status(okay?"FOREGROUND_ACTIVE":"FOREGROUND_DEGRADED");
+      status(GrowwQuota.cooling(this)?"GROWW_COOLDOWN_PAUSED":
+         okay?"FOREGROUND_ACTIVE":"FOREGROUND_DEGRADED");
       Intent changed=new Intent(WatchStore.ACTION);changed.setPackage(getPackageName());
       sendBroadcast(changed);
       if(started){
