@@ -1056,10 +1056,12 @@ public final class HomeActivity extends AppCompatActivity {
         "The last completed scan found no qualified technical watches. Check scan coverage and data timestamps.",12,MUTED,false));
     }
     MajorReleaseDashboard.capGrid(this,root,capWithFactorAudit(live),"Live trading · cap-balanced research");
-    root.addView(text("Other sourced research records · cap or full-factor verification pending",14,INK,true));
+    root.addView(text("EQ-series research records · cap and factor verification pending",14,INK,true));
+    root.addView(text("Legacy SME/BE/BZ/ST names remain in saved history, but are excluded from normal EQ recommendations.",11,MUTED,false));
     for(int i=0;i<live.length();i++){
       JSONObject item=live.optJSONObject(i);
-      if(item!=null)stockCard(item,i+1,false);
+      if(item!=null&&"EQ".equals(item.optString("nseSeries","EQ")))
+         stockCard(item,i+1,false);
     }
     if(!serverConfigured()&&!discovery.completedForCurrentEod()){
       JSONArray partial=discovery.partialVerifiedResearch();
@@ -1071,7 +1073,8 @@ public final class HomeActivity extends AppCompatActivity {
         space(6);
         for(int k=0;k<partial.length();k++){
           JSONObject candidate=partial.optJSONObject(k);
-          if(candidate!=null)stockCard(candidate,k+1,false);
+          if(candidate!=null&&"EQ".equals(candidate.optString("nseSeries","EQ")))
+             stockCard(candidate,k+1,false);
         }
       }
     }
@@ -1108,6 +1111,7 @@ public final class HomeActivity extends AppCompatActivity {
     DualFactorEvidence evidence=new DualFactorEvidence(this);
     for(int i=0;enriched!=null&&i<enriched.length();i++){
       JSONObject row=enriched.optJSONObject(i);if(row==null)continue;
+      if(!"EQ".equals(row.optString("nseSeries","EQ")))continue;
       String cap=row.optString("amfiCap","");
       if("SMALL".equals(cap)&&small>=3)continue;
       if("MID".equals(cap)&&mid>=3)continue;
@@ -1136,6 +1140,8 @@ public final class HomeActivity extends AppCompatActivity {
     ThreePmCapture capture=new ThreePmCapture(this);
     JSONObject frozen=capture.latest();
     root.addView(text("Tomorrow · frozen 3 PM research",22,INK,true));space(6);
+    root.addView(text("Next NSE regular session: "+NseEquityCalendar.next(java.time.LocalDate.now(MarketSchedule.IST))+
+      " · NSE holiday calendar",11,MUTED,false));space(5);
     root.addView(text("Point-in-time Groww LTP capture at 15:00–15:02 IST when this phone is allowed to run. This is NOT a guaranteed service or a verified BUY.",12,MUTED,false));space(9);
     if(frozen.length()>0){
       root.addView(text(frozen.optString("date","")+" · "+frozen.optString("state",""),
