@@ -43,6 +43,11 @@ final class WatchState {
     j.put("reference",safe(m.breakoutLevel));j.put("referenceAsOf",m.referenceAsOf);
     j.put("referenceSource",m.referenceSource);
     j.put("tradeMs",m.lastTradeMs);j.put("polledAt",polledAt);
+    j.put("quoteAgeMs",m.lastTradeMs>0&&polledAt>=m.lastTradeMs?
+      polledAt-m.lastTradeMs:JSONObject.NULL);
+    j.put("exchangeTimestampFresh",p.fresh);
+    j.put("marketCapFieldState",m.marketCapFieldState);
+    j.put("staleQuotePolicy","10 seconds required for signals; inactive symbols re-polled every 5 minutes");
     j.put("high",safe(m.high));j.put("low",safe(m.low));
     j.put("volume",safe(m.dayVolume));j.put("vwap",safe(m.vwap));
     j.put("spreadBps",safe(m.spreadBps));j.put("fiveCount",m.fiveCount);
