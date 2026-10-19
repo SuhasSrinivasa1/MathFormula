@@ -41,14 +41,32 @@ final class ThreePmCapture {
     return captureWindow(now)&&!today().equals(latest().optString("date",""))&&
       now-prefs.getLong("lastAttemptMs",0)>20_000L;
   }
+  /** Prefer fresh radar candidates, but preserve same-day previous radar research
+   * leads as provisional sources if no refresh occurred in the last 20 minutes.
+   * The 15:00 quote must be fetched NOW; an earlier lead is never a live BUY.
+   */
+  static JSONArray candidates(Context context){
+    IntradayRadar radar=new IntradayRadar(context);
+    JSONArray current=radar.currentCandidates();
+    if(current!=null&&current.length()>0)return current;
+    JSONObject previous=radar.latest();
+    String today=java.time.LocalDate.now(MarketSchedule.IST).toString();
+    JSONArray saved=previous.optJSONArray("top");
+    if(today.equals(previous.optString("session",""))&&saved!=null)
+      return saved;
+    return new JSONArray();
+  }
   /** Captures real Groww LTP in the 15:00-15:02 observation window. */
   synchronized JSONObject capture(GrowwReadOnlyClient groww,JSONArray source)throws Exception{
     long now=System.currentTimeMillis();String day=today();
     if(!captureWindow(now))throw new IllegalStateException("3 PM point-in-time window is closed");
     if(day.equals(latest().optString("date","")))return latest();
     prefs.edit().putLong("lastAttemptMs",now).apply();
+    if(source==null||source.length()==0)source=candidates(app);
     if(source==null||source.length()==0){
-      prefs.edit().putString("state","NO RECENT NSE RADAR · Freeze unfilled").apply();
+      prefs.edit().putString("state","NO SAME-DAY RADAR · Freeze unfilled").apply();
+      new WatchStore(app).audit("NEXT_DAY_FREEZE","NSE","DUE","NO_CANDIDATES",
+        "No current-session radar candidates exist; no 3 PM prices invented",0);
       return new JSONObject();
     }
     AmfiClassification classification=new AmfiClassification(app);
@@ -123,6 +141,13 @@ final class ThreePmCapture {
         "GROWW_CURRENT_MARKET_CAP_ESTIMATE_NOT_OFFICIAL_AMFI_AVERAGE")
       .put("scannedUniverse",new IntradayRadar(app).latest().optInt("scannedUniverse",0))
       .put("radarObservedMs",new IntradayRadar(app).latest().optLong("observedMs",0))
+      .put("radarAgeAtFreezeMs",
+        Math.max(0,observed-new IntradayRadar(app).latest().optLong("observedMs",0)))
+      .put("candidateResearchStatus","SAME_SESSION_RADAR_MAY_BE_STALE; 3PM_LTP_REFRESHED")
+      .put("classifiedSmallCount",partitions[0].length())
+      .put("classifiedMidCount",partitions[1].length())
+      .put("classifiedLargeCount",partitions[2].length())
+      .put("unclassifiedCount",partitions[3].length())
       .put("recommendations",rows)
       .put("noTradingOrders",true);
     JSONArray old=history(),updates=new JSONArray();
@@ -141,8 +166,19 @@ final class ThreePmCapture {
   }
   JSONObject audit(){
     JSONObject p=latest(),j=new JSONObject();
-    try{j.put("state",status()).put("lastAttemptMs",prefs.getLong("lastAttemptMs",0L))
-      .put("current",p).put("historyCount",history().length());}
+    try{
+      long now=System.currentTimeMillis();
+      java.time.ZonedDateTime z=Instant.ofEpochMilli(now).atZone(MarketSchedule.IST);
+      boolean windowPast=NseEquityCalendar.session(z.toLocalDate())&&
+        !z.toLocalTime().isBefore(LocalTime.of(15,2));
+      boolean todaySaved=today().equals(p.optString("date",""));
+      boolean neverAttemptedToday=prefs.getLong("lastAttemptMs",0L)<
+        z.toLocalDate().atStartOfDay(MarketSchedule.IST).toInstant().toEpochMilli();
+      String effectiveState=windowPast&&!todaySaved&&neverAttemptedToday?
+        "MISSED · no 15:00–15:02 capture attempt observed":status();
+      j.put("state",effectiveState).put("lastAttemptMs",prefs.getLong("lastAttemptMs",0L))
+       .put("current",p).put("historyCount",history().length());
+    }
     catch(Exception ignored){}
     return j;
   }
