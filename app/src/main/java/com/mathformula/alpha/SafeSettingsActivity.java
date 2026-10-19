@@ -40,7 +40,7 @@ public final class SafeSettingsActivity extends Activity {
   private final Handler main=new Handler(Looper.getMainLooper());
   private final ExecutorService worker=Executors.newSingleThreadExecutor();
   private LinearLayout content;
-  private EditText tokenField,secretField,webSearchField;
+  private EditText tokenField,secretField,webSearchField,serverUrlField,serverViewerField;
   private SecureGrowwStore secure;
   private String message="Ready to connect your Groww read-only market-data account";
   private boolean checking=false;
@@ -124,6 +124,24 @@ public final class SafeSettingsActivity extends Activity {
     content.addView(tokenField);content.addView(secretField);
     addButton("Save encrypted credentials",()->saveCredentials(false));
     addButton(checking?"Checking Groww…":"Verify Groww market-data access",()->saveCredentials(true));
+    rule();
+    heading("Optional independent scanner backend");
+    String savedServer=getSharedPreferences("mathformula_shared_runtime_v30",MODE_PRIVATE)
+      .getString("server_url","");
+    content.addView(label("Optional: connect to a separately deployed MathFormula HTTPS scanner. This phone cannot host an always-on NSE service. No cloud service is deployed by installing this APK.",12,MUTED,false));
+    content.addView(label("Server: "+(savedServer.isEmpty()?"NOT CONFIGURED":"CONFIGURED (HTTPS)")+
+      " · viewer token: "+(secure.get("server_viewer_token").length()>=32?"SAVED":"MISSING"),12,NAVY,true));
+    serverUrlField=field("https://your-scanner.example.com",false);
+    serverUrlField.setText(savedServer);
+    serverViewerField=field("Server viewer token (32+ characters) · blank keeps saved",true);
+    content.addView(serverUrlField);content.addView(serverViewerField);
+    addButton("Save & test scanner connection",this::saveAndTestBackend);
+    addButton("Use phone-only mode (clear scanner config)",()->{
+      getSharedPreferences("mathformula_shared_runtime_v30",MODE_PRIVATE).edit()
+        .remove("server_url").apply();
+      message="Phone-only research restored; previously saved viewer token is retained securely";
+      draw();
+    });
     rule();
     heading("Market data & public research");
     content.addView(label("NSE cash quotes, historical candles and instrument discovery: Groww Trade API. Company filings and fundamentals: official NSE, BSE and issuer publications. Macro, sectors and global catalysts: dated public internet sources.",12,MUTED,false));
@@ -235,6 +253,45 @@ public final class SafeSettingsActivity extends Activity {
         draw();
       });
     });
+  }
+  private void saveAndTestBackend(){
+    if(serverUrlField==null||checking)return;
+    String base=serverUrlField.getText().toString().trim();
+    String entered=serverViewerField.getText().toString().trim();
+    if(!base.startsWith("https://")){
+      message="Only HTTPS scanner URLs are permitted";draw();return;
+    }
+    try{
+      java.net.URL url=new java.net.URL(base);
+      if(!"https".equalsIgnoreCase(url.getProtocol())||url.getHost()==null||
+         url.getHost().isEmpty()||url.getUserInfo()!=null||url.getQuery()!=null||
+         url.getRef()!=null||(!url.getPath().isEmpty()&&!"/".equals(url.getPath())))
+        throw new IllegalArgumentException("Use a bare HTTPS server origin");
+      if(!entered.isEmpty()){
+        if(entered.length()<32)throw new IllegalArgumentException("Viewer token too short");
+        secure.put("server_viewer_token",entered);
+      }
+      String viewer=secure.get("server_viewer_token");
+      if(viewer.length()<32)throw new IllegalArgumentException("Viewer token missing");
+      getSharedPreferences("mathformula_shared_runtime_v30",MODE_PRIVATE).edit()
+        .putString("server_url",url.getProtocol()+"://"+url.getAuthority()).commit();
+      message="Scanner saved; checking live HTTPS status...";
+      draw();
+      worker.execute(()->{
+        String outcome;
+        try{
+          BackendReadOnlyClient scanner=new BackendReadOnlyClient(base,viewer);
+          org.json.JSONObject state=scanner.get("/v1/status");
+          outcome=state.length()>0?"Scanner connected · read-only health response received":
+            "Scanner replied without status data";
+        }catch(Exception ex){outcome="Scanner saved but offline or unauthorized; no remote BUY accepted";}
+        final String report=outcome;
+        main.post(()->{if(!isFinishing()&&!isDestroyed()){message=report;draw();}});
+      });
+    }catch(Exception error){
+      message="Invalid scanner configuration: "+error.getClass().getSimpleName();
+      draw();
+    }
   }
   private void saveWebSearch(){
     String key=webSearchField.getText().toString().trim();
