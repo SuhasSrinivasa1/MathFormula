@@ -52,7 +52,7 @@ public final class ResearchJob extends JobService {
           if(research.due())
             research.refresh(new LocalDiscovery(this).priorityWatchlist());
         }
-        if(!cancelled && growwReady && LocalDiscovery.overnightResearchWindow()){
+        if(!cancelled && growwReady && !GrowwQuota.cooling(this) && LocalDiscovery.overnightResearchWindow()){
           try{
             new ForecastOutcomes(this).inspectNextSession(
               new GrowwReadOnlyClient(new SecureGrowwStore(this)));
@@ -60,7 +60,7 @@ public final class ResearchJob extends JobService {
             // A failed completed-session read is NOT evidence of a winning or losing forecast.
           }
         }
-        if(!cancelled && growwReady &&
+        if(!cancelled && growwReady && !GrowwQuota.cooling(this) &&
            (MarketSchedule.weekdayTradingTime(System.currentTimeMillis())||
             LocalDiscovery.overnightResearchWindow())){
           GrowwReadOnlyClient client=new GrowwReadOnlyClient(new SecureGrowwStore(this));
