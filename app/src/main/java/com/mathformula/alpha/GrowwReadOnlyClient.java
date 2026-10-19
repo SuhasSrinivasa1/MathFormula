@@ -34,6 +34,7 @@ final class GrowwReadOnlyClient {
   private final java.util.Map<String,Double> dailyCacheHigh=new java.util.HashMap<>();
   private final java.util.Map<String,String> dailyCacheAsOf=new java.util.HashMap<>();
   GrowwReadOnlyClient(SecureGrowwStore secrets){this.secrets=secrets;this.quotaContext=secrets.context();}
+  android.content.Context context(){return quotaContext;}
   static final class Market {
     String symbol; double price=Double.NaN,change=Double.NaN,vwap=Double.NaN,bid=Double.NaN,ask=Double.NaN;
     double high=Double.NaN,low=Double.NaN,dayVolume=Double.NaN,spreadBps=Double.NaN;
