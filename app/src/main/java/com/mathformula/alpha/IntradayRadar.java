@@ -33,9 +33,7 @@ final class IntradayRadar {
   private static String completedSession(){
     ZonedDateTime now=ZonedDateTime.now(MarketSchedule.IST);
     java.time.LocalDate day=now.toLocalDate().minusDays(1);
-    while(day.getDayOfWeek()==java.time.DayOfWeek.SATURDAY||
-          day.getDayOfWeek()==java.time.DayOfWeek.SUNDAY)day=day.minusDays(1);
-    return day.toString();
+    return NseEquityCalendar.previous(day).toString();
   }
   private static double field(Object data,String key){
     if(data instanceof JSONObject)return ((JSONObject)data).optDouble(key,Double.NaN);
