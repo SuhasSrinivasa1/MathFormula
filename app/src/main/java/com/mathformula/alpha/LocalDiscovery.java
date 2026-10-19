@@ -106,9 +106,7 @@ final class LocalDiscovery {
     java.time.ZonedDateTime z=java.time.ZonedDateTime.now(IST);
     LocalDate day=z.toLocalTime().isBefore(java.time.LocalTime.of(16,30))?
       z.toLocalDate().minusDays(1):z.toLocalDate();
-    while(day.getDayOfWeek()==java.time.DayOfWeek.SATURDAY||
-          day.getDayOfWeek()==java.time.DayOfWeek.SUNDAY)day=day.minusDays(1);
-    return day.toString();
+    return NseEquityCalendar.previous(day).toString();
   }
   private GrowwReadOnlyClient.NextSessionHistory historyCached(GrowwReadOnlyClient api,
                                                                 String symbol) throws Exception{
