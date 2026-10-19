@@ -144,14 +144,15 @@ final class IntradayRadar {
       // Opportunistic cache warm-up for the strongest missing-H20 research
       // candidates. Historical quota is 4/minute; never fan out across the
       // entire NSE universe during trading or assume success means BUY.
-      int historyBackfilled=0;
+      int historyBackfilled=0,historyAttempts=0;
       leads.sort((a,b)->Double.compare(
         b.optDouble("preliminaryRank",0),a.optDouble("preliminaryRank",0)));
       for(JSONObject lead:leads){
-        if(historyBackfilled>=2||GrowwQuota.cooling(app))break;
+        if(historyAttempts>=2||GrowwQuota.cooling(app))break;
         if(lead.optBoolean("historyVerified",false))continue;
         String symbol=lead.optString("symbol","");
         if(!symbol.matches("[A-Z0-9&-]{1,26}"))continue;
+        historyAttempts++;
         try{
           GrowwReadOnlyClient.NextSessionHistory h=discovery.historyCached(api,symbol);
           if(h.completedSessions<61||h.nextHigh20<=0||h.avgValue20<10_000_000)continue;
@@ -181,6 +182,7 @@ final class IntradayRadar {
         .put("batchesSucceeded",batchesGood).put("batchesFailed",batchesFailed)
         .put("historicalReferencesMatched",cachedReferences)
         .put("historicalReferencesBackfilled",historyBackfilled)
+        .put("historicalBackfillAttempts",historyAttempts)
         .put("technicalLeads",leads.size()).put("top",top)
         .put("status","RESEARCH ONLY · NOT A LIVE ALPHA-30 BUY")
         .put("formulaVersion",Alpha30Engine.VERSION)
