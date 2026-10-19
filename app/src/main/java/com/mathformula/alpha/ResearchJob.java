@@ -105,7 +105,11 @@ public final class ResearchJob extends JobService {
               discovery.lastAttemptState().startsWith("INTERRUPTED");
             long gap=paused?12*60_000L:45*60_000L;
             if(System.currentTimeMillis()-discovery.lastAttempt()>gap){
-              try{discovery.scanForNextSession(client,progress->{});}
+              try{
+                org.json.JSONObject finished=discovery.scanForNextSession(client,progress->{});
+                // Reuse completed scanner shortlist, no user-uploaded CSV needed.
+                new GrowwCapAuto(this).refresh(client,finished.optJSONArray("top"),3);
+              }
               catch(Exception ex){
                 ResearchAlerts.record(this,0,
                   ex instanceof InterruptedException?
