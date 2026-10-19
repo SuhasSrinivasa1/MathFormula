@@ -42,6 +42,17 @@ public final class ResearchJob extends JobService {
     // Official filing RSS collection is useful even outside the Groww research window.
     worker.execute(()->{
       try{
+        // On an actual 15:00 JobScheduler wakeup, capture BEFORE slower feeds,
+        // history or full-universe work. Android can still defer this job.
+        if(!cancelled&&growwReady&&new ThreePmCapture(this).due()){
+          try{
+            GrowwReadOnlyClient nowClient=new GrowwReadOnlyClient(new SecureGrowwStore(this));
+            new ThreePmCapture(this).capture(nowClient,ThreePmCapture.candidates(this));
+          }catch(Exception exception){
+            new WatchStore(this).audit("NEXT_DAY_FREEZE","NSE","DUE","FAILED",
+              "Scheduled 3 PM research observation: "+exception.getClass().getSimpleName(),0);
+          }
+        }
         // Public filing metadata collection is independent of broker tokens; on-device only.
         new OfficialNseFeed(this).refresh();
         if(!cancelled)new OfficialFinancialCollector(this).refresh();
@@ -81,13 +92,6 @@ public final class ResearchJob extends JobService {
             try{discovery.refreshPriority(client);}
             catch(Exception ex){ResearchAlerts.record(this,0,
               "Priority quote refresh unavailable: "+ex.getClass().getSimpleName());}
-            if(!cancelled&&new ThreePmCapture(this).due()){
-              try{
-                new ThreePmCapture(this).capture(client,radar.currentCandidates());
-              }catch(Exception ex){
-                ResearchAlerts.record(this,0,"3 PM capture unavailable: "+ex.getClass().getSimpleName());
-              }
-            }
             if(!cancelled){
               // Paid Groww market_cap hydration; separately rate-limited and cached.
               try{
