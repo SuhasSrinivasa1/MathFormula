@@ -1140,7 +1140,7 @@ public final class HomeActivity extends AppCompatActivity {
     ThreePmCapture capture=new ThreePmCapture(this);
     JSONObject frozen=capture.latest();
     root.addView(text("Tomorrow · frozen 3 PM research",22,INK,true));space(6);
-    root.addView(text("Next NSE regular session: "+NseEquityCalendar.next(java.time.LocalDate.now(MarketSchedule.IST))+
+    root.addView(text("Next NSE regular session: "+NseEquityCalendar.nextOrUnavailable(java.time.LocalDate.now(MarketSchedule.IST))+
       " · NSE holiday calendar",11,MUTED,false));space(5);
     root.addView(text("Point-in-time Groww LTP capture at 15:00–15:02 IST when this phone is allowed to run. This is NOT a guaranteed service or a verified BUY.",12,MUTED,false));space(9);
     if(frozen.length()>0){
