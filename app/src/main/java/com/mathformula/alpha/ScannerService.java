@@ -100,7 +100,7 @@ public final class ScannerService extends Service {
       !t.isBefore(LocalTime.of(9,15))&&t.isBefore(LocalTime.of(15,30));
   }
   private Notification notification(String caption){
-    Intent open=new Intent(this,MainActivity.class);
+    Intent open=new Intent(this,HomeActivity.class);
     PendingIntent pi=PendingIntent.getActivity(this,0,open,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
     return new Notification.Builder(this,CHANNEL)
       .setContentTitle("MathFormula · local NSE monitoring")
