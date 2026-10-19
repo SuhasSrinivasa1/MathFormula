@@ -53,12 +53,30 @@ final class DiagnosticExporter {
     model.put("signalCompleteness","Not available from Groww data alone");
     return model;
   }
-  static JSONObject localSummary(WatchStore state,List<String> symbols) throws Exception {
+  static JSONObject localSummary(Context ctx,WatchStore state,List<String> symbols) throws Exception {
     JSONObject summary=new JSONObject();
     summary.put("scannedAtMs",state.lastPoll());
     summary.put("lastScanSuccess",state.lastPollOk());
     summary.put("lastScanIssue",WatchStore.safeExplanation(state.lastError()));
     summary.put("monitorEnabledFlag",state.enabled());
+    android.content.SharedPreferences foreground=ctx.getSharedPreferences(
+      "mathformula_local_monitor_v32",Context.MODE_PRIVATE);
+    long heartbeat=foreground.getLong("heartbeat_ms",0);
+    long now=System.currentTimeMillis();
+    summary.put("monitorState",foreground.getString("monitoring_state","NOT_STARTED"));
+    summary.put("monitorHeartbeatMs",heartbeat);
+    summary.put("monitorHeartbeatAgeMs",heartbeat>0&&now>=heartbeat?now-heartbeat:JSONObject.NULL);
+    summary.put("lastSchedulerRestoreMs",foreground.getLong("scheduler_restored_ms",0));
+    android.content.SharedPreferences job=ctx.getSharedPreferences(
+      "mathformula_research_job_health_v451",Context.MODE_PRIVATE);
+    summary.put("researchJobLastStartedMs",job.getLong("started_ms",0));
+    summary.put("researchJobLastFinishedMs",job.getLong("finished_ms",0));
+    summary.put("researchJobLastStoppedMs",job.getLong("stopped_ms",0));
+    summary.put("researchJobLastState",job.getString("state","NEVER_RUN"));
+    IntradayRadar radar=new IntradayRadar(ctx);
+    summary.put("radarLastSuccessfulMs",radar.completedAt());
+    summary.put("radarLastAttemptMs",radar.attemptedAt());
+    summary.put("radarLastIssue",WatchStore.safeExplanation(radar.issue()));
     summary.put("lastPreCloseAtMs",state.lastPreClose());
     summary.put("preCloseSummary",WatchStore.safeExplanation(state.precloseSummary()));
     summary.put("watchedSymbolCount",symbols.size());
@@ -75,7 +93,7 @@ final class DiagnosticExporter {
   }
   static JSONObject manifest(Context ctx,boolean hasServer,String status,int obsLines,int auditLines) throws Exception{
     JSONObject manifest=new JSONObject();
-    manifest.put("exportSchema","MathFormula-diagnostic-v4.4");
+    manifest.put("exportSchema","MathFormula-diagnostic-v4.5.1");
     String appVersion="unknown";
     try{appVersion=ctx.getPackageManager().getPackageInfo(ctx.getPackageName(),0).versionName;}
     catch(Exception ignored){}
@@ -132,7 +150,7 @@ final class DiagnosticExporter {
           .put("note","A successful API response verifies authentication at that time. An idle Android app cannot guarantee a persistent open connection; TOTP values never exported.");
         quota.put("growwConnection",connection);
         entry(zip,"quota_and_alert_health.json",quota.toString(2));
-        entry(zip,"local_watchlist_and_health.json",localSummary(state,symbols).toString(2));
+        entry(zip,"local_watchlist_and_health.json",localSummary(ctx,state,symbols).toString(2));
         // Automatic NSE discovery shortlist, coverage and archived promotions; no authentication fields.
         LocalDiscovery discovery=new LocalDiscovery(ctx);
         entry(zip,"local_nse_discovery.json",discovery.exportJson());
