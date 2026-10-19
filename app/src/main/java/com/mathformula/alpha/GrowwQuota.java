@@ -12,14 +12,14 @@ import java.util.ArrayDeque;
  * Groww published REST group limit: LIVE DATA 10/second and 300/minute.
  * Conservative internal budget: 2/sec, 60/min.
  * Groww does not publish an independent historical/backtesting per-minute quota
- * on its REST introduction page. Reserve at most 3 historical requests/minute.
+ * on its REST introduction page. Reserve at most 4 historical requests/minute; provider 429 cooldown applies.
  * External account usage is unknowable; a 429 must halt and cool down.
  * Account-wide usage by other apps/processes is NOT observable here.
  */
 final class GrowwQuota {
   private static final int LIVE_SECOND=2, LIVE_MINUTE=60, AUTH_DAY=90;
-  private static final int HISTORY_MINUTE=3;
-  private static final long HISTORY_INTERVAL_MS=21000L;
+  private static final int HISTORY_MINUTE=4;
+  private static final long HISTORY_INTERVAL_MS=16000L;
   private static final String PREF="mathformula_quota_guard_v28";
   private static final Object LOCK=new Object();
   private static final ArrayDeque<Long> liveSecond=new ArrayDeque<>();
