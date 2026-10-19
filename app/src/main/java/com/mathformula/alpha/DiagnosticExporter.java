@@ -149,7 +149,7 @@ final class DiagnosticExporter {
             java.time.LocalDate.now(MarketSchedule.IST)))
           .put("normalTradingSeries","EQ")
           .put("legacyHistoryPreserved",true)
-          .put("historicalCandleWindowDays",175)
+          .put("historicalCandleWindowDays",365)
           .put("historicQuota",GrowwQuota.policy().getInt("historicalInternalRequestsPerMinute"));
         entry(zip,"nse_regular_session_calendar_and_research_policy.json",calendarAudit.toString(2));
         entry(zip,"three_pm_freeze_audit.json",new ThreePmCapture(ctx).audit().toString(2));
