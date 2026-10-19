@@ -159,7 +159,17 @@ public final class SafeSettingsActivity extends Activity {
     GrowwCapAuto caps=new GrowwCapAuto(this);
     content.addView(label("Paid Groww market-cap quotes cached: "+caps.savedCount()+
        " · updated automatically as stocks are researched.",12,NAVY,true));
-    content.addView(label("Small/mid/large groups are estimated from Groww's current market capitalization using reference thresholds. They are NOT official AMFI six-month average classifications. No CSV or Excel upload needed.",11,AMBER,false));
+    content.addView(label("Small/mid/large groups are estimated from Groww's current market capitalization using reference thresholds. They are NOT official AMFI six-month average classifications. If Groww omits market_cap, classification stays unavailable.",11,AMBER,false));
+    AmfiClassification amfi=new AmfiClassification(this);
+    content.addView(label("Imported AMFI classifications: "+amfi.count()+
+      " · user supplied, not independently authenticated",12,NAVY,false));
+    addButton("Optional: import AMFI symbol/category CSV",()->{
+      Intent select=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+      select.addCategory(Intent.CATEGORY_OPENABLE);
+      select.setType("text/*");
+      startActivityForResult(select,REQUEST_AMFI);
+    });
+    content.addView(label("To show three stocks per cap category, the app needs enough classified source-backed research candidates. Unknown classes remain UNCLASSIFIED; stocks and BUY signals are never invented.",11,AMBER,false));
     rule();
     heading("Diagnostics and notifications");
     content.addView(label(ResearchAlerts.permission(this)?
