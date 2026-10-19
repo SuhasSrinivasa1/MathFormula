@@ -1,5 +1,6 @@
 """Read-only Groww REST adaptor, TOTP credentials from environment; no order routes."""
-import os,time,hmac,hashlib,base64,struct,urllib.request,urllib.parse,json,threading
+import os,time,hmac,hashlib,base64,struct,urllib.request,urllib.parse,urllib.error,json,threading
+from collections import deque
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -21,15 +22,31 @@ class Groww:
         self.access_day="" # explicitly supplied access token may be stale
         self.lock=threading.Lock()
         self.last_call=0.0
-        self.min_interval=.25
+        # Deliberately stay below the app's conservative 35/min internal
+        # live-data policy. These are SERVER-only counts, not account-wide.
+        self.min_interval=1.05
+        self.live_calls=deque()
+        self.cooldown_until=0.0
     def _request(self,path,access,body=None):
-        with self.lock:
-            pause=self.min_interval-(time.monotonic()-self.last_call)
-            if pause>0:time.sleep(pause)
-            self.last_call=time.monotonic()
         if not (path.startswith("/v1/live-data/ltp?") or path.startswith("/v1/live-data/quote?")
                 or path=="/v1/token/api/access"):
             raise GrowwError("Read-only endpoint allowlist rejected request")
+        with self.lock:
+            while True:
+                now=time.monotonic()
+                if now<self.cooldown_until:
+                    raise GrowwError("Groww 429 cooldown active; no requests permitted")
+                is_live=path.startswith("/v1/live-data/")
+                while self.live_calls and now-self.live_calls[0]>=60:
+                    self.live_calls.popleft()
+                delay=max(0,self.min_interval-(now-self.last_call))
+                if is_live and len(self.live_calls)>=35:
+                    delay=max(delay,60-(now-self.live_calls[0])+.05)
+                if delay<=0:
+                    self.last_call=now
+                    if is_live:self.live_calls.append(now)
+                    break
+                time.sleep(min(delay,2.0))
         url="https://api.groww.in"+path
         headers={"Authorization":"Bearer "+access,"X-API-VERSION":"1.0",
                  "Accept":"application/json"}
@@ -39,6 +56,12 @@ class Groww:
         try:
             with urllib.request.urlopen(req,timeout=12) as res:
                 result=json.loads(res.read(1_000_000))
+        except urllib.error.HTTPError as e:
+            if e.code==429:
+                with self.lock:
+                    self.cooldown_until=max(self.cooldown_until,time.monotonic()+30*60)
+                raise GrowwError("Groww HTTP 429; backend paused for 30 minutes") from e
+            raise GrowwError("Groww HTTP "+str(e.code)) from e
         except Exception as e:
             raise GrowwError("Groww request failed: "+type(e).__name__) from e
         if not isinstance(result,dict) or result.get("status")=="FAILURE":
