@@ -457,7 +457,7 @@ final class LocalDiscovery {
         // This strategy is strictly NSE CASH normal EQ-series listed equities.
         // SME, trade-to-trade BE/BZ, ST, E1 and other series are excluded.
         if(!typ.isEmpty()&&!"EQ".equals(typ)){excludedNonEquity++;continue;}
-        if(!"EQ".equals(ser)){
+        if(!isNormalCashEquitySeries(ser)){
           excludedSeries++;continue;
         }
         String s=row.get(symbol).trim().toUpperCase(Locale.US);
@@ -493,6 +493,7 @@ final class LocalDiscovery {
       .put("note","Strict NSE normal EQ series: excludes SME, BE/BZ/ST/E1, ETFs and other instruments. Existing historical journals remain preserved.");
     return stocks;
   }
+  static boolean isNormalCashEquitySeries(String code){return "EQ".equalsIgnoreCase(code==null?"":code.trim());}
   private int column(List<String> head,String name){
     for(int i=0;i<head.size();i++)
       if(name.equalsIgnoreCase(head.get(i).trim()))return i;
