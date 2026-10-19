@@ -53,7 +53,9 @@ final class ThreePmCapture {
     }
     AmfiClassification classification=new AmfiClassification(app);
     GrowwCapAuto caps=new GrowwCapAuto(app);
-    JSONArray[] partitions={new JSONArray(),new JSONArray(),new JSONArray()};
+    // Unknown classifications are retained explicitly in a separate research
+    // bucket; they must never be labelled as officially AMFI verified.
+    JSONArray[] partitions={new JSONArray(),new JSONArray(),new JSONArray(),new JSONArray()};
     HashSet<String> seen=new HashSet<>();
     List<String> symbols=new ArrayList<>();
     for(int i=0;i<source.length()&&symbols.size()<9;i++){
@@ -61,8 +63,9 @@ final class ThreePmCapture {
       String symbol=row.optString("symbol","");
       String cap=classification.bucket(symbol);
       if(cap.isEmpty())cap=caps.bucket(symbol);
-      int index="SMALL".equals(cap)?0:"MID".equals(cap)?1:"LARGE".equals(cap)?2:-1;
-      if(index<0||partitions[index].length()>=3||!seen.add(symbol))continue;
+      int index="SMALL".equals(cap)?0:"MID".equals(cap)?1:"LARGE".equals(cap)?2:3;
+      // Keep 3 per known category and up to 3 unclassified for audit coverage.
+      if(partitions[index].length()>=3||!seen.add(symbol))continue;
       symbols.add(symbol);
       partitions[index].put(row);
     }
@@ -92,9 +95,9 @@ final class ThreePmCapture {
         .put("price",price)
         .put("quotePolledMs",observed)
         .put("tradeMs",0)
-        .put("amfiCap",i==0?"SMALL":i==1?"MID":"LARGE")
+        .put("amfiCap",i==0?"SMALL":i==1?"MID":i==2?"LARGE":"UNCLASSIFIED")
         .put("capImported",!classification.bucket(symbol).isEmpty())
-        .put("capEstimated",classification.bucket(symbol).isEmpty())
+        .put("capEstimated",classification.bucket(symbol).isEmpty()&&i!=3)
         .put("capVerified",false)
         .put("signal","NO_SIGNAL")
         .put("entryEligible",false)
@@ -115,7 +118,7 @@ final class ThreePmCapture {
       .put("calendarSource",NseEquityCalendar.SOURCE)
       .put("targetTradingSession",NseEquityCalendar.next(Instant.ofEpochMilli(observed).atZone(MarketSchedule.IST).toLocalDate()).toString())
       .put("state",rows.length()>=5?"FROZEN PROVISIONAL · FULL SCORE PENDING":
-          "FROZEN INCOMPLETE · fewer than 5 imported-cap candidates")
+          "FROZEN INCOMPLETE · fewer than 5 source-observed candidates")
       .put("capProvenance",classification.count()>0?classification.origin():
         "GROWW_CURRENT_MARKET_CAP_ESTIMATE_NOT_OFFICIAL_AMFI_AVERAGE")
       .put("scannedUniverse",new IntradayRadar(app).latest().optInt("scannedUniverse",0))
