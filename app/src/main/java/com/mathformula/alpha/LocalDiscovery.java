@@ -93,7 +93,17 @@ final class LocalDiscovery {
     if(msg.contains("429")||msg.contains("rate limit")||msg.contains("cooldown"))return "API_RATE_LIMIT";
     if(msg.contains("historical_response_missing"))return "HISTORICAL_RESPONSE_MISSING";
     if(msg.contains("history_timestamp_or_candle_parse_empty"))return "HISTORICAL_PARSE_OR_EMPTY";
-    if(msg.contains("insufficient_completed_sessions"))return "UNDER_61_TRADING_SESSIONS";
+    if(msg.contains("insufficient_completed_sessions")){
+      java.util.regex.Matcher found=java.util.regex.Pattern.compile(
+        "insufficient_completed_sessions:\\s*(\\d+)").matcher(msg);
+      if(found.find()){
+        int count=Integer.parseInt(found.group(1));
+        return count<20?"UNDER_61_SESSIONS_00_19":
+          count<40?"UNDER_61_SESSIONS_20_39":
+          count<61?"UNDER_61_SESSIONS_40_60":"SESSION_COUNT_INCONSISTENT";
+      }
+      return "UNDER_61_SESSIONS_COUNT_UNKNOWN";
+    }
     if(msg.contains("eod_last_session_too_old"))return "STALE_LAST_DAILY_CANDLE";
     if(msg.contains("http 4")||msg.contains("http 5"))return "API_HTTP_ERROR";
     if(msg.contains("daily")||msg.contains("candles")||msg.contains("history")||msg.contains("session"))
@@ -444,10 +454,10 @@ final class LocalDiscovery {
         nseCash++;
         String typ=kind>=0&&kind<row.size()?row.get(kind).trim().toUpperCase(Locale.US):"";
         String ser=row.get(series).trim().toUpperCase(Locale.US);
-        // NSE equities may be traded in more than the EQ series. Exclude funds,
-        // indices, debt and derivatives; do not pretend these are stocks.
+        // This strategy is strictly NSE CASH normal EQ-series listed equities.
+        // SME, trade-to-trade BE/BZ, ST, E1 and other series are excluded.
         if(!typ.isEmpty()&&!"EQ".equals(typ)){excludedNonEquity++;continue;}
-        if(!Arrays.asList("EQ","BE","BZ","SM","ST","E1").contains(ser)){
+        if(!"EQ".equals(ser)){
           excludedSeries++;continue;
         }
         String s=row.get(symbol).trim().toUpperCase(Locale.US);
@@ -480,7 +490,7 @@ final class LocalDiscovery {
       .put("excludedSeriesRows",excludedSeries).put("excludedFundsAndEtfs",excludedFunds)
       .put("invalidSymbolRows",missingSymbol)
       .put("eligibleSeries",seriesJson)
-      .put("note","Count comes from Groww NSE CASH equity instrument master; no artificial 4,000 target.");
+      .put("note","Strict NSE normal EQ series: excludes SME, BE/BZ/ST/E1, ETFs and other instruments. Existing historical journals remain preserved.");
     return stocks;
   }
   private int column(List<String> head,String name){
@@ -531,7 +541,7 @@ final class LocalDiscovery {
       List<Broad> broad=new ArrayList<>();
       int successfulBatches=0,failedBatches=0;
       boolean broadCacheUsed=false;
-      if(afterHours&&prefs.getInt("overnightBroadPolicy",0)==18 &&
+      if(afterHours&&prefs.getInt("overnightBroadPolicy",0)==19 &&
          researchSession.equals(prefs.getString("overnightBroadSession",""))){
         try{
           JSONArray saved=new JSONArray(prefs.getString("overnightBroadSnapshot","[]"));
@@ -589,7 +599,7 @@ final class LocalDiscovery {
           JSONArray saved=new JSONArray();
           for(Broad item:broad)saved.put(jsonBroad(item));
           prefs.edit().putString("overnightBroadSession",researchSession)
-            .putString("overnightBroadSnapshot",saved.toString()).putInt("overnightBroadPolicy",18)
+            .putString("overnightBroadSnapshot",saved.toString()).putInt("overnightBroadPolicy",19)
             .putInt("overnightQuotedCount",prices.size())
             .putInt("overnightSuccessfulBatches",successfulBatches)
             .putInt("overnightFailedBatches",failedBatches).commit();
@@ -796,6 +806,8 @@ final class LocalDiscovery {
          .put("verificationRejectReasons",rejectionReasons)
          .put("verificationAttempted",checked)
          .put("historicalVerificationCap",0).put("intradayMoveUpperCutoffRemoved",true)
+         .put("normalNseSeriesOnly","EQ").put("legacyHistoryJournalPreserved",true)
+         .put("exchangeCalendar",NseEquityCalendar.VERSION)
          .put("researchCutoffDate",afterHours?researchSession:"")
          .put("completedFullResearch",afterHours&&checked==toVerify&&failedBatches==0)
          .put("priorityCount",priorityWatchlist().length())
