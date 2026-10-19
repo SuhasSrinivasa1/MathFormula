@@ -32,6 +32,8 @@ public final class ResearchJob extends JobService {
     ResearchAlerts.channel(c);
   }
   @Override public boolean onStartJob(JobParameters params){
+    getSharedPreferences("mathformula_research_job_health_v451",MODE_PRIVATE).edit()
+      .putLong("started_ms",System.currentTimeMillis()).putString("state","RUNNING").apply();
     cancelled=false;
     if(worker.isShutdown())worker=Executors.newSingleThreadExecutor();
     final boolean growwReady=new SecureGrowwStore(this).configured();
@@ -124,12 +126,17 @@ public final class ResearchJob extends JobService {
           }
         }
       }finally{
+        getSharedPreferences("mathformula_research_job_health_v451",MODE_PRIVATE).edit()
+          .putLong("finished_ms",System.currentTimeMillis())
+          .putString("state",cancelled?"CANCELLED":"FINISHED").apply();
         if(!cancelled)jobFinished(params,false);
       }
     });
     return true;
   }
   @Override public boolean onStopJob(JobParameters params){
+    getSharedPreferences("mathformula_research_job_health_v451",MODE_PRIVATE).edit()
+      .putLong("stopped_ms",System.currentTimeMillis()).putString("state","STOPPED_BY_ANDROID").apply();
     cancelled=true;
     worker.shutdownNow();
     // Reschedule only when OS permits; not a precise 15-minute alarm.
