@@ -73,9 +73,14 @@ public final class HomeActivity extends AppCompatActivity {
       boolean open=MarketSchedule.weekdayTradingTime(System.currentTimeMillis());
       // Keep the user's selected section. Closing bell does not close a valid research watch.
       startedWhileOpen=open;
-      ensureGrowwAccessIfDue();
-      captureThreePmIfDue();
+      if(!GrowwQuota.cooling(HomeActivity.this)){
+        ensureGrowwAccessIfDue();
+        captureThreePmIfDue();
+      }
       if(serverConfigured())fetchRemote();
+      else if(GrowwQuota.cooling(HomeActivity.this)){
+        scanProgress="Groww cooldown · research automatically resumes when allowed";
+      }
       else if(open){
         // Intraday universe quotes must be independently refreshed; EOD history stays frozen.
         refreshIntradayRadarIfDue();
@@ -268,7 +273,7 @@ public final class HomeActivity extends AppCompatActivity {
   private void ensureFresh(){ /* Full universe research is strictly overnight. */ }
   private void refreshPriorityWatchlist(){
     long now=System.currentTimeMillis();
-    if(!open()||priorityBusy||!secrets.configured()||discovery.scanning()||
+    if(!open()||GrowwQuota.cooling(this)||priorityBusy||!secrets.configured()||discovery.scanning()||
        now-lastPriorityAttempt<60000L)return;
     if(discovery.priorityWatchlist().length()==0)return;
     priorityBusy=true;lastPriorityAttempt=now;
@@ -284,7 +289,7 @@ public final class HomeActivity extends AppCompatActivity {
       t.isBefore(java.time.LocalTime.of(7,30));
   }
   private void ensureNextSessionFresh(){
-    if(serverConfigured()||open()||!secrets.configured()||busy||quoteBusy||discovery.scanning())return;
+    if(serverConfigured()||open()||GrowwQuota.cooling(this)||!secrets.configured()||busy||quoteBusy||discovery.scanning())return;
     long now=System.currentTimeMillis();
     java.time.LocalTime t=Instant.ofEpochMilli(now).atZone(MarketSchedule.IST).toLocalTime();
     // EOD finalized only after 16:30. Never start resource-heavy research
@@ -295,7 +300,7 @@ public final class HomeActivity extends AppCompatActivity {
     runNextSessionScan(false);
   }
   private void runNextSessionScan(boolean force){
-    if(serverConfigured()||busy||quoteBusy||discovery.scanning()||!secrets.configured())return;
+    if(serverConfigured()||GrowwQuota.cooling(this)||busy||quoteBusy||discovery.scanning()||!secrets.configured())return;
     if(!safeOvernightWindow()){
       Toast.makeText(this,"Full NSE scan runs only 16:30–07:30 IST. Monitoring the saved shortlist during market hours.",Toast.LENGTH_LONG).show();
       return;
@@ -354,7 +359,7 @@ public final class HomeActivity extends AppCompatActivity {
     refreshPriorityWatchlist();refreshPrices();
   }
   private void runFullScan(boolean force){
-    if(busy||quoteBusy||!safeOvernightWindow()||!secrets.configured()||discovery.scanning())return;
+    if(busy||quoteBusy||GrowwQuota.cooling(this)||!safeOvernightWindow()||!secrets.configured()||discovery.scanning())return;
     long now=System.currentTimeMillis();
     long interval=MarketSchedule.preClose(now)?5*60000L:15*60000L;
     if(!force && discovery.lastScan()>0 && now-discovery.lastScan()<interval)return;
@@ -377,7 +382,7 @@ public final class HomeActivity extends AppCompatActivity {
   }
   private void evaluateAlerts(){
     long now=System.currentTimeMillis();
-    if(!open()||busy||quoteBusy||!secrets.configured()||now-lastAlertAttempt<5*60000L)return;
+    if(!open()||GrowwQuota.cooling(this)||busy||quoteBusy||!secrets.configured()||now-lastAlertAttempt<5*60000L)return;
     JSONObject snap=discovery.latest();
     long last=snap.optLong("scannedAtMs",0);
     if(last<=0||now-last>25*60000L)return;
@@ -398,7 +403,7 @@ public final class HomeActivity extends AppCompatActivity {
   }
   /** Refresh selected prices, without pretending the entire NSE universe was rescanned. */
   private void refreshPrices(){
-    if(!open()||busy||quoteBusy||!secrets.configured())return;
+    if(!open()||GrowwQuota.cooling(this)||busy||quoteBusy||!secrets.configured())return;
     long now=System.currentTimeMillis();
     if(now-lastQuoteAttempt<30000)return;
     JSONArray list=discovery.latest().optJSONArray("top");
@@ -454,6 +459,9 @@ public final class HomeActivity extends AppCompatActivity {
     boolean marketOpen=open();
     String state=busy||discovery.scanning()?
       "SCAN RUNNING":!marketOpen?"NEXT-SESSION RESEARCH":"AUTO DISCOVERY ACTIVE";
+    long cooldown=GrowwQuota.cooldownRemainingMs(this);
+    if(cooldown>0)c.addView(text("GROWW COOLDOWN · "+
+      ((cooldown+59_999)/60_000)+" minutes remaining. Broker requests paused; automatic retry after expiry.",12,AMBER,true));
     c.addView(text("Groww NSE scan  ·  "+state,15,
       busy||discovery.scanning()?BLUE:marketOpen?GREEN:AMBER,true));
     spaceIn(c,7);
@@ -859,7 +867,7 @@ public final class HomeActivity extends AppCompatActivity {
 
   /** Broad live NSE price discovery; this is research ONLY, never a BUY validator. */
   private void refreshIntradayRadarIfDue(){
-    if(!open()||serverConfigured()||!secrets.configured()||
+    if(!open()||GrowwQuota.cooling(this)||serverConfigured()||!secrets.configured()||
        radarBusy||discovery.scanning()||!intradayRadar.due())return;
     radarBusy=true;
     worker.execute(()->{
