@@ -60,28 +60,47 @@ final class GrowwCapAuto {
    * attempt and let the shared Groww quota account for all other features.
    */
   int refresh(GrowwReadOnlyClient api,JSONArray leads,int maxRequests){
-    if(leads==null||maxRequests<=0)return 0;
-    HashSet<String> seen=new HashSet<>();
-    int attempted=0,received=0;
+    if(leads==null||maxRequests<=0||GrowwQuota.cooling(api.context()))return 0;
     long now=System.currentTimeMillis();
-    for(int i=0;i<leads.length()&&attempted<maxRequests;i++){
+    long old=prefs.getLong("lastAttemptMs",0);
+    if(old>0&&now-old<15*60_000L)return 0;
+    HashSet<String> seen=new HashSet<>();
+    int attempted=0,received=0,withoutCap=0,zero=0,unparsed=0,quoteErrors=0;
+    boolean cooling=false;
+    for(int i=0;i<leads.length()&&attempted<Math.min(6,maxRequests);i++){
       JSONObject j=leads.optJSONObject(i);
       String symbol=j!=null?j.optString("symbol",""):leads.optString(i,"");
       if(!symbol.matches("[A-Z0-9&-]{1,26}")||!seen.add(symbol))continue;
       if(!bucket(symbol).isEmpty())continue;
+      long missingAt=prefs.getLong("missing_cap_"+symbol,0L);
+      if(missingAt>0&&now-missingAt<6*60*60_000L)continue;
+      if(GrowwQuota.cooling(api.context())){cooling=true;break;}
       attempted++;
       try{
-        GrowwReadOnlyClient.Market q=api.quote(symbol);
-        if(!estimate(q.marketCap).isEmpty()){record(q);received++;}
-      }catch(SecurityException denied){break;}
+        GrowwReadOnlyClient.Market quote=api.quote(symbol);
+        if(!estimate(quote.marketCap).isEmpty()){
+          record(quote);received++;
+        }else{
+          if("MISSING_OR_NULL".equals(quote.marketCapFieldState))withoutCap++;
+          else if("ZERO_OR_NEGATIVE".equals(quote.marketCapFieldState))zero++;
+          else unparsed++;
+          prefs.edit().putLong("missing_cap_"+symbol,now).apply();
+        }
+      }catch(SecurityException denied){quoteErrors++;break;}
        catch(Exception temporarilyUnavailable){
+        quoteErrors++;
         String issue=String.valueOf(temporarilyUnavailable.getMessage()).toLowerCase(Locale.US);
         if(issue.contains("429")||issue.contains("cooldown")||
-          issue.contains("auth")||issue.contains("rate limit"))break;
+          issue.contains("auth")||issue.contains("rate limit")){
+          cooling=true;break;
+        }
       }
     }
     prefs.edit().putLong("lastAttemptMs",now)
-      .putInt("lastAttempted",attempted).putInt("lastReceived",received).apply();
+      .putInt("lastAttempted",attempted).putInt("lastReceived",received)
+      .putInt("lastMissingMarketCap",withoutCap).putInt("lastZeroMarketCap",zero)
+      .putInt("lastUnparsedMarketCap",unparsed).putInt("lastQuoteErrors",quoteErrors)
+      .putBoolean("lastStoppedForCooldown",cooling).apply();
     return received;
   }
   JSONArray enrich(JSONArray source){
@@ -110,7 +129,13 @@ final class GrowwCapAuto {
       .put("savedFreshApprox",savedCount()).put("lastAtMs",lastAt())
       .put("lastAttemptMs",prefs.getLong("lastAttemptMs",0))
       .put("lastAttempted",prefs.getInt("lastAttempted",0))
-      .put("lastReceived",prefs.getInt("lastReceived",0));}
+      .put("lastReceived",prefs.getInt("lastReceived",0))
+      .put("lastMissingMarketCap",prefs.getInt("lastMissingMarketCap",0))
+      .put("lastZeroMarketCap",prefs.getInt("lastZeroMarketCap",0))
+      .put("lastUnparsedMarketCap",prefs.getInt("lastUnparsedMarketCap",0))
+      .put("lastQuoteErrors",prefs.getInt("lastQuoteErrors",0))
+      .put("lastStoppedForCooldown",prefs.getBoolean("lastStoppedForCooldown",false))
+      .put("note","Cap fields absent in provider responses are not invented; negative results cached six hours. Quote cap denomination must be verified from actual numeric payload.");}
     catch(Exception ignored){}
     return j;
   }
