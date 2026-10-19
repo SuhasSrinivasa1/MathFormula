@@ -40,6 +40,7 @@ final class MajorReleaseDashboard {
   }
   private static boolean isVerifiedCap(JSONObject row,String cap){
     if(row==null || (!row.optBoolean("capVerified",false)&&!row.optBoolean("capImported",false)&&!row.optBoolean("capEstimated",false)))return false;
+    if(!"EQ".equals(row.optString("nseSeries","EQ")))return false;
     String value=row.optString("amfiCap",row.optString("marketCapBucket","")).toUpperCase(Locale.US);
     return cap.equals(value)|| (cap+"-CAP").equals(value);
   }
