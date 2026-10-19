@@ -33,8 +33,7 @@ final class ThreePmCapture {
   static boolean captureWindow(long now){
     ZonedDateTime z=Instant.ofEpochMilli(now).atZone(MarketSchedule.IST);
     LocalTime t=z.toLocalTime();
-    return z.getDayOfWeek()!=java.time.DayOfWeek.SATURDAY &&
-      z.getDayOfWeek()!=java.time.DayOfWeek.SUNDAY &&
+    return NseEquityCalendar.session(z.toLocalDate()) &&
       !t.isBefore(LocalTime.of(15,0))&&t.isBefore(LocalTime.of(15,2));
   }
   boolean due(){
@@ -113,6 +112,8 @@ final class ThreePmCapture {
     JSONObject snapshot=new JSONObject().put("date",day)
       .put("observedAtMs",observed).put("window","15:00:00–15:01:59 IST")
       .put("model",DualScoringModel.VERSION)
+      .put("calendarSource",NseEquityCalendar.SOURCE)
+      .put("targetTradingSession",NseEquityCalendar.next(Instant.ofEpochMilli(observed).atZone(MarketSchedule.IST).toLocalDate()).toString())
       .put("state",rows.length()>=5?"FROZEN PROVISIONAL · FULL SCORE PENDING":
           "FROZEN INCOMPLETE · fewer than 5 imported-cap candidates")
       .put("capProvenance",classification.count()>0?classification.origin():
