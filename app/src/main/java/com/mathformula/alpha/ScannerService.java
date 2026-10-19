@@ -38,10 +38,11 @@ public final class ScannerService extends Service {
   private final Handler loop=new Handler(Looper.getMainLooper());
   private final ExecutorService work=Executors.newSingleThreadExecutor();
   private final ExecutorService radarWorker=Executors.newSingleThreadExecutor();
+  private final ExecutorService freezeWorker=Executors.newSingleThreadExecutor();
   private WatchStore store;
   private SecureGrowwStore vault;
   private GrowwReadOnlyClient client;
-  private volatile boolean busy=false,radarBusy=false,started=false;
+  private volatile boolean busy=false,radarBusy=false,freezeBusy=false,started=false;
   private volatile int recentQuotes=0,recentUniverse=0;
   private String lastReminderDay="";
   private long sessionStart;
@@ -68,6 +69,9 @@ public final class ScannerService extends Service {
             "Open MathFormula and tap Start background to renew the Android monitoring session.");
         }
       }
+      // First priority at 15:00 is to record an actual point-in-time research
+      // observation, not to wait behind quote or full-universe radar scans.
+      captureThreePmWhenDue();
       long cooldown=GrowwQuota.cooldownRemainingMs(ScannerService.this);
       if(cooldown>0){
         status("GROWW_COOLDOWN_PAUSED");
@@ -205,6 +209,24 @@ public final class ScannerService extends Service {
         store.audit("RADAR","UNIVERSE","ACTIVE","SCAN_FAILURE",
           failure.getClass().getSimpleName(),0);
       }finally{radarBusy=false;}
+    });
+  }
+  private void captureThreePmWhenDue(){
+    ThreePmCapture snapshot=new ThreePmCapture(this);
+    if(freezeBusy||!snapshot.due())return;
+    freezeBusy=true;
+    freezeWorker.execute(()->{
+      try{
+        if(GrowwQuota.cooling(this)){
+          store.audit("NEXT_DAY_FREEZE","NSE","DUE","GROWW_COOLDOWN",
+            "Provider rate limit blocked a 3 PM quote; do not fabricate a freeze",0);
+          return;
+        }
+        snapshot.capture(client,ThreePmCapture.candidates(this));
+      }catch(Exception failure){
+        store.audit("NEXT_DAY_FREEZE","NSE","DUE","FAILED",
+          "3 PM phone observation unavailable: "+failure.getClass().getSimpleName(),0);
+      }finally{freezeBusy=false;}
     });
   }
   private void fetchCycle(){
@@ -352,7 +374,7 @@ public final class ScannerService extends Service {
   @Override public void onDestroy(){
     boolean unexpected=started;
     started=false;loop.removeCallbacks(pulse);work.shutdownNow();
-    radarWorker.shutdownNow();store.setEnabled(false);
+    radarWorker.shutdownNow();freezeWorker.shutdownNow();store.setEnabled(false);
     if(unexpected)status("INTERRUPTED_UNEXPECTEDLY");
     super.onDestroy();
   }
