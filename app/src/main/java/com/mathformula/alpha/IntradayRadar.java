@@ -141,6 +141,33 @@ final class IntradayRadar {
       if(quotes<Math.max(200,(int)(universe.size()*.85)))
         throw new IllegalStateException("Incomplete intraday NSE price coverage: "+quotes+
           "/"+universe.size());
+      // Opportunistic cache warm-up for the strongest missing-H20 research
+      // candidates. Historical quota is 4/minute; never fan out across the
+      // entire NSE universe during trading or assume success means BUY.
+      int historyBackfilled=0;
+      leads.sort((a,b)->Double.compare(
+        b.optDouble("preliminaryRank",0),a.optDouble("preliminaryRank",0)));
+      for(JSONObject lead:leads){
+        if(historyBackfilled>=2||GrowwQuota.cooling(app))break;
+        if(lead.optBoolean("historyVerified",false))continue;
+        String symbol=lead.optString("symbol","");
+        if(!symbol.matches("[A-Z0-9&-]{1,26}"))continue;
+        try{
+          GrowwReadOnlyClient.NextSessionHistory h=discovery.historyCached(api,symbol);
+          if(h.completedSessions<61||h.nextHigh20<=0||h.avgValue20<10_000_000)continue;
+          double distance=100*(lead.optDouble("price")/h.nextHigh20-1);
+          lead.put("historyVerified",true).put("h20AsOf",refDate)
+            .put("breakoutLevel",h.nextHigh20).put("distancePct",distance)
+            .put("status","RESEARCH WATCH · H20 NOW VERIFIED")
+            .put("reason","Completed EOD H20 backfilled; live execution and full Alpha-30 unverified");
+          historyBackfilled++;
+          cachedReferences++;
+        }catch(Exception historyError){
+          // Provider cooldown is respected by the shared quota governor.
+          // No fallback, guess or invented breakout reference is permitted.
+          if(GrowwQuota.cooling(app))break;
+        }
+      }
       leads.sort((a,b)->{
         int verified=Boolean.compare(b.optBoolean("historyVerified"),a.optBoolean("historyVerified"));
         return verified!=0?verified:
@@ -153,6 +180,7 @@ final class IntradayRadar {
         .put("scannedUniverse",universe.size()).put("quotesLoaded",quotes)
         .put("batchesSucceeded",batchesGood).put("batchesFailed",batchesFailed)
         .put("historicalReferencesMatched",cachedReferences)
+        .put("historicalReferencesBackfilled",historyBackfilled)
         .put("technicalLeads",leads.size()).put("top",top)
         .put("status","RESEARCH ONLY · NOT A LIVE ALPHA-30 BUY")
         .put("formulaVersion",Alpha30Engine.VERSION)
