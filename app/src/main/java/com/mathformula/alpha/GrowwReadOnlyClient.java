@@ -148,7 +148,8 @@ final class GrowwReadOnlyClient {
   History history60(String symbol) throws Exception {
     if(!symbol.matches("[A-Z0-9&-]{1,26}"))throw new IllegalArgumentException("Invalid NSE symbol");
     LocalDate today=LocalDate.now(IST);
-    LocalDate start=today.minusDays(135),end=today.minusDays(1);
+    LocalDate end=NseEquityCalendar.previous(today.minusDays(1));
+    LocalDate start=end.minusDays(175); // Groww allows up to 180 days per daily request
     String path="/v1/historical/candles?exchange=NSE&segment=CASH&groww_symbol="+encoded("NSE-"+symbol)
       +"&start_time="+encoded(start+" 09:15:00")+"&end_time="+encoded(end+" 15:30:00")
       +"&candle_interval=1day";
@@ -196,7 +197,8 @@ final class GrowwReadOnlyClient {
     // Latest daily candle is not trusted until after the close has been processed.
     LocalDate cutoff=local.toLocalTime().isBefore(LocalTime.of(16,30))?
       local.toLocalDate().minusDays(1):local.toLocalDate();
-    LocalDate start=cutoff.minusDays(155);
+    cutoff=NseEquityCalendar.previous(cutoff);
+    LocalDate start=cutoff.minusDays(175); // use almost all documented 180-day daily window
     String path="/v1/historical/candles?exchange=NSE&segment=CASH&groww_symbol="+
       encoded("NSE-"+symbol)+"&start_time="+encoded(start+" 09:15:00")+
       "&end_time="+encoded(cutoff+" 16:15:00")+"&candle_interval=1day";
@@ -218,9 +220,17 @@ final class GrowwReadOnlyClient {
       candles.add(new double[]{at,op,hi,lo,cl,vol});
     }
     candles.sort((a,b)->Double.compare(a[0],b[0]));
-    if(candles.size()<61)throw new IllegalStateException(
-      candles.isEmpty()?"HISTORY_TIMESTAMP_OR_CANDLE_PARSE_EMPTY":
-      "INSUFFICIENT_COMPLETED_SESSIONS: "+candles.size()+" of required 61");
+    if(candles.size()<61){
+      String first=candles.isEmpty()?"none":
+        Instant.ofEpochMilli((long)candles.get(0)[0]).atZone(IST).toLocalDate().toString();
+      String last=candles.isEmpty()?"none":
+        Instant.ofEpochMilli((long)candles.get(candles.size()-1)[0]).atZone(IST).toLocalDate().toString();
+      throw new IllegalStateException(candles.isEmpty()?
+        "HISTORY_TIMESTAMP_OR_CANDLE_PARSE_EMPTY":
+        "INSUFFICIENT_COMPLETED_SESSIONS: "+candles.size()+
+          " of required 61; first="+first+"; last="+last+
+          "; providerRows="+rows.length());
+    }
     int n=candles.size();
     double[] d=candles.get(n-1),previous=candles.get(n-2);
     java.time.LocalDate observed=Instant.ofEpochMilli((long)d[0]).atZone(IST).toLocalDate();
