@@ -17,7 +17,7 @@ import java.util.ArrayDeque;
  * Account-wide usage by other apps/processes is NOT observable here.
  */
 final class GrowwQuota {
-  private static final int LIVE_SECOND=2, LIVE_MINUTE=60, AUTH_DAY=90;
+  private static final int LIVE_SECOND=1, LIVE_MINUTE=35, AUTH_DAY=90;
   private static final int HISTORY_MINUTE=4;
   private static final long HISTORY_INTERVAL_MS=16000L;
   private static final String PREF="mathformula_quota_guard_v28";
@@ -28,11 +28,21 @@ final class GrowwQuota {
   private static long blockedUntil=0;
   private static long lastHistorical=0;
   private GrowwQuota(){}
+  static long cooldownRemainingMs(Context context){
+    long until=context.getApplicationContext()
+      .getSharedPreferences(PREF,Context.MODE_PRIVATE).getLong("cooldownWallMs",0);
+    return Math.max(0,until-System.currentTimeMillis());
+  }
+  static boolean cooling(Context context){return cooldownRemainingMs(context)>0;}
+  static void skippedCycle(Context context){
+    SharedPreferences p=context.getApplicationContext().getSharedPreferences(PREF,Context.MODE_PRIVATE);
+    p.edit().putLong("lastSkippedCycleMs",System.currentTimeMillis())
+      .putInt("totalSkippedMonitorCycles",p.getInt("totalSkippedMonitorCycles",0)+1).apply();
+  }
   static void acquire(String path,Context context) throws InterruptedException {
     // Persist the server-imposed account cooldown across Android process restarts.
     android.content.SharedPreferences prefs=context.getSharedPreferences(PREF,Context.MODE_PRIVATE);
-    long enforced=prefs.getLong("cooldownWallMs",0L);
-    long remaining=enforced-System.currentTimeMillis();
+    long remaining=cooldownRemainingMs(context);
     if(remaining>0)throw new IllegalStateException(
       "Groww API cooldown active; pause scanning for "+((remaining+59999)/60000)+" minutes");
     final boolean auth=path.equals("/v1/token/api/access");
@@ -96,7 +106,8 @@ final class GrowwQuota {
       .put("internalLiveRequestsPerMinute",LIVE_MINUTE)
       .put("internalAuthRequestsPerDay",AUTH_DAY)
       .put("historicalInternalRequestsPerMinute",HISTORY_MINUTE)
-      .put("externalAppsIncluded",false);
+      .put("externalAppsIncluded",false)
+      .put("provider429CooldownSkipsNetworkCalls",true);
   }
   static org.json.JSONObject counters(Context context) throws org.json.JSONException {
     SharedPreferences recorded=context.getSharedPreferences(PREF,Context.MODE_PRIVATE);
@@ -115,7 +126,9 @@ final class GrowwQuota {
           Math.max(0,recorded.getLong("cooldownWallMs",0L)-System.currentTimeMillis())))
         .put("totalProvider429",recorded.getInt("total429",0))
         .put("lastProvider429Ms",recorded.getLong("last429At",0))
-        .put("localBudgetIsNotAccountWide",true);
+        .put("localBudgetIsNotAccountWide",true)
+        .put("totalSkippedMonitorCycles",recorded.getInt("totalSkippedMonitorCycles",0))
+        .put("lastSkippedCycleMs",recorded.getLong("lastSkippedCycleMs",0));
     }
   }
   static String status(){
