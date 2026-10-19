@@ -96,7 +96,8 @@ public final class ScannerService extends Service {
     if(d==DayOfWeek.SATURDAY||d==DayOfWeek.SUNDAY)return false;
     LocalTime t=z.toLocalTime();
     // Exchange holiday data unavailable on phone: service fails closed only when provider responds inactive.
-    return !t.isBefore(LocalTime.of(9,15))&&t.isBefore(LocalTime.of(15,30));
+    return NseEquityCalendar.session(z.toLocalDate()) &&
+      !t.isBefore(LocalTime.of(9,15))&&t.isBefore(LocalTime.of(15,30));
   }
   private Notification notification(String caption){
     Intent open=new Intent(this,MainActivity.class);
