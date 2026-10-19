@@ -212,7 +212,8 @@ public final class ScannerService extends Service {
     busy=true;work.execute(()->{
       try{
       List<String> symbols=watchlist();
-      boolean fullFive=java.time.ZonedDateTime.now(IST).getMinute()%5==0;int success=0;String lastFailure="";
+      boolean fullFive=java.time.ZonedDateTime.now(IST).getMinute()%5==0;
+      int success=0, skippedStale=0;String lastFailure="";
       long now=System.currentTimeMillis();
       for(String symbol:symbols){
         if(GrowwQuota.cooling(this)){
@@ -225,7 +226,7 @@ public final class ScannerService extends Service {
         long oldTrade=existing.optLong("tradeMs",0L);
         boolean stalePreviously=WatchState.STALE.equals(existing.optString("stage",""));
         if(stalePreviously&&previousPoll>0&&now-previousPoll<5*60_000L&&
-           (oldTrade<=0||now-oldTrade>60_000L))continue;
+           (oldTrade<=0||now-oldTrade>60_000L)){skippedStale++;continue;}
         try{
           GrowwReadOnlyClient.Market m=client.quote(symbol);
         new GrowwCapAuto(this).record(m);
@@ -269,7 +270,12 @@ public final class ScannerService extends Service {
           store.audit("ERROR",symbol,"","FETCH FAILED",lastFailure,0);
         }
       }
-      boolean okay=success==symbols.size()&&success>0;
+      boolean idle=symbols.isEmpty();
+      boolean okay=!idle&&success==symbols.size()&&success>0;
+      if(!idle && !okay && lastFailure.isEmpty())
+        lastFailure=skippedStale>0?
+          "STALE_QUOTES_SKIPPED: "+skippedStale+" inactive market timestamps; waiting for next safe poll":
+          "PARTIAL_QUOTES: updated "+success+" of "+symbols.size()+" monitored stocks";
       if(fullFive&&success>0)ResearchAlerts.evaluate(this,client,new LocalDiscovery(this).latest());
       if(MarketSchedule.checkpoint(now)){
         StringBuilder shortlist=new StringBuilder();
@@ -285,10 +291,12 @@ public final class ScannerService extends Service {
         store.recordPreClose(label,shortlist.toString());
         reminder("Pre-close watch · "+label,"Updated watched symbols. Check MathFormula; not a BUY signal.");
       }
-      store.recordScan(okay,okay?"":lastFailure,success);
+      // An empty watchlist is a normal idle state, not an unqualified scan failure.
+      store.recordScan(okay||idle,(okay||idle)?"":lastFailure,success);
       recentQuotes=success;
       status(GrowwQuota.cooling(this)?"GROWW_COOLDOWN_PAUSED":
-         okay?"FOREGROUND_ACTIVE":"FOREGROUND_DEGRADED");
+         idle?"IDLE_NO_WATCHLIST":okay?"FOREGROUND_ACTIVE":
+         skippedStale>0?"STALE_QUOTES_DEFERRED":"FOREGROUND_DEGRADED");
       Intent changed=new Intent(WatchStore.ACTION);changed.setPackage(getPackageName());
       sendBroadcast(changed);
       if(started){
