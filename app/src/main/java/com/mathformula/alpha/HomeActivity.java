@@ -236,8 +236,16 @@ public final class HomeActivity extends AppCompatActivity {
   private String serverUrl(){
     return getSharedPreferences("mathformula_shared_runtime_v30",MODE_PRIVATE).getString("server_url","");
   }
-  /** Phone-only Groww + public internet research. Legacy viewer configuration is disabled. */
-  private boolean serverConfigured(){return false;}
+  /** Use the independent scanner only when the user has explicitly configured
+   * a valid HTTPS endpoint and a viewer token; never infer server availability.
+   * Network health is shown separately, and disconnected results are not BUY.
+   */
+  private boolean serverConfigured(){
+    String base=serverUrl();
+    if(base==null||!base.startsWith("https://"))return false;
+    String key=secrets==null?"":secrets.get("server_viewer_token");
+    return key.length()>=32;
+  }
   private void fetchRemote(){
     if(remoteBusy||!serverConfigured())return;
     long now=System.currentTimeMillis();
