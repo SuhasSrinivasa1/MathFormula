@@ -152,7 +152,7 @@ final class GrowwReadOnlyClient {
     if(!symbol.matches("[A-Z0-9&-]{1,26}"))throw new IllegalArgumentException("Invalid NSE symbol");
     LocalDate today=LocalDate.now(IST);
     LocalDate end=NseEquityCalendar.previous(today.minusDays(1));
-    LocalDate start=end.minusDays(175); // Groww allows up to 180 days per daily request
+    LocalDate start=end.minusDays(365); // Groww documents up to 1080 days per one-day candle request
     String path="/v1/historical/candles?exchange=NSE&segment=CASH&groww_symbol="+encoded("NSE-"+symbol)
       +"&start_time="+encoded(start+" 09:15:00")+"&end_time="+encoded(end+" 15:30:00")
       +"&candle_interval=1day";
@@ -201,7 +201,7 @@ final class GrowwReadOnlyClient {
     LocalDate cutoff=local.toLocalTime().isBefore(LocalTime.of(16,30))?
       local.toLocalDate().minusDays(1):local.toLocalDate();
     cutoff=NseEquityCalendar.previous(cutoff);
-    LocalDate start=cutoff.minusDays(175); // use almost all documented 180-day daily window
+    LocalDate start=cutoff.minusDays(365); // one-year evidence for thinly traded shares; no extra historical requests
     String path="/v1/historical/candles?exchange=NSE&segment=CASH&groww_symbol="+
       encoded("NSE-"+symbol)+"&start_time="+encoded(start+" 09:15:00")+
       "&end_time="+encoded(cutoff+" 16:15:00")+"&candle_interval=1day";
