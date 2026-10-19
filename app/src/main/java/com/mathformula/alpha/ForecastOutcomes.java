@@ -65,7 +65,9 @@ final class ForecastOutcomes {
           attempted++;
           GrowwReadOnlyClient.NextSessionHistory bar=client.nextSessionHistory(symbol);
           LocalDate session=LocalDate.parse(bar.sessionDate);
-          if(!session.isAfter(date))continue;
+          if(!session.equals(NseEquityCalendar.next(date)))continue;
+          // Reject historical candles from a later session as if they were
+          // the immediate next session; the NSE holiday calendar is authoritative.
           double close=bar.close;
           if(!Double.isFinite(close)||close<=0)continue;
           double change=100*(close/start-1);
@@ -89,7 +91,8 @@ final class ForecastOutcomes {
             .put("remediation","Review sector relative strength, catalyst age, VWAP context and late-day exhaustion. Change weights only after out-of-sample validation.")
             .put("source","Groww completed daily historical candle")
             .put("observedAtMs",System.currentTimeMillis())
-            .put("needsNseCalendarVerification",true);
+            .put("needsNseCalendarVerification",false)
+            .put("calendarVersion",NseEquityCalendar.VERSION);
           existing.put(item);done.add(recordKey);tested++;
           new WatchStore(app).audit("FORECAST_EVALUATION",symbol,
             "FROZEN_RESEARCH",result,WatchStore.safeExplanation(item.optString("reason")),0);
