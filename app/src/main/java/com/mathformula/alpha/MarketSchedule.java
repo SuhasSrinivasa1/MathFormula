@@ -15,7 +15,7 @@ final class MarketSchedule {
     ZonedDateTime z=Instant.ofEpochMilli(millis).atZone(IST);
     DayOfWeek day=z.getDayOfWeek();
     LocalTime time=z.toLocalTime();
-    return day!=DayOfWeek.SUNDAY&&day!=DayOfWeek.SATURDAY&&
+    return NseEquityCalendar.session(z.toLocalDate()) &&
       !time.isBefore(OPEN)&&time.isBefore(CLOSE);
   }
   static boolean preClose(long millis){
